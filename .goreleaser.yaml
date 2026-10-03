@@ -1,0 +1,26 @@
+# GoReleaser scaffold — the first real release is v1.0.0 (milestone M8, see ROADMAP.md).
+version: 2
+
+project_name: serverctl
+
+builds:
+  - id: serverctl
+    main: ./cmd/serverctl
+    binary: serverctl
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats:
+      - tar.gz
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
