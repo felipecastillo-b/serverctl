@@ -1,0 +1,27 @@
+# Build artifacts
+/serverctl
+/bin/
+/dist/
+*.test
+*.out
+
+# Coverage
+coverage.txt
+coverage.html
+*.coverprofile
+
+# Go workspace / vendor noise
+vendor/
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local agent workspace
+.atl/
+odd/
