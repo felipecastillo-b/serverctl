@@ -12,8 +12,12 @@ var version = "dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(),
-			"serverctl — local-first TUI for Linux server administration over SSH\n\nUsage: serverctl [flags]\n")
+		// Best-effort usage print: there is no useful recovery if writing
+		// to stderr fails, but errcheck still requires an explicit decision.
+		if _, err := fmt.Fprintf(flag.CommandLine.Output(),
+			"serverctl — local-first TUI for Linux server administration over SSH\n\nUsage: serverctl [flags]\n"); err != nil {
+			return
+		}
 		flag.PrintDefaults()
 	}
 	flag.Parse()
