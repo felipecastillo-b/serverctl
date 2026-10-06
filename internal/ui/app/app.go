@@ -45,14 +45,18 @@ type Model struct {
 	now      time.Time
 }
 
-// New builds the root model from an already validated configuration: the
-// caller (main) exits on invalid key overrides, so ApplyOverrides cannot
-// fail here and its error is intentionally discarded.
+// New builds the root model against the live kernel interfaces.
 func New(cfg config.Config) Model {
+	return NewWithSystem(cfg, collectors.New("/"))
+}
+
+// NewWithSystem builds the root model reading system data from sys. Tests
+// point it at collector fixtures; production always uses New.
+func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 	global := keys.DefaultGlobal()
 	_ = global.ApplyOverrides(cfg.Keys)
 
-	list := screens.All(theme.FromName(cfg.Theme), collectors.New("/"))
+	list := screens.All(theme.FromName(cfg.Theme), sys)
 	titles := make([]string, len(list))
 	for i, s := range list {
 		titles[i] = s.Title()
@@ -69,9 +73,11 @@ func New(cfg config.Config) Model {
 	}
 }
 
-// Init starts the refresh ticker.
+// Init starts the refresh ticker AND the active screen's initial data
+// collection; without the latter the dashboard would render its
+// "collecting..." state idle until the first tick.
 func (m Model) Init() tea.Cmd {
-	return m.tick()
+	return tea.Batch(m.tick(), m.screens[m.active].Init())
 }
 
 // tick schedules the next refresh tick after the configured interval.
@@ -98,8 +104,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+	default:
+		// Every other message (screen data results, action outcomes, ...)
+		// belongs to the active screen. Swallowing them here once left the
+		// dashboard stuck on "collecting..."; the router MUST forward.
+		updated, cmd := m.screens[m.active].Update(msg)
+		m.screens[m.active] = updated
+		return m, cmd
 	}
-	return m, nil
 }
 
 // handleKey applies the input rules of ARCHITECTURE.md §6. While the help

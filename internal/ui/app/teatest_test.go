@@ -18,9 +18,15 @@ func TestShellBootsAndQuits(t *testing.T) {
 	tm := teatest.NewTestModel(t, New(config.Default()),
 		teatest.WithInitialTermSize(100, 30))
 
+	// Wait for "cores": it renders ONLY after real system data flowed
+	// through the router into the dashboard CPU block, so it proves the
+	// whole pipeline (boot, init collection, message routing, render).
+	// One WaitFor, not two: WaitFor consumes the output stream as it
+	// scans, and the renderer skips unchanged lines, so a marker already
+	// consumed by an earlier WaitFor would never be seen twice.
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return bytes.Contains(bts, []byte("serverctl"))
-	}, teatest.WithDuration(5*time.Second))
+		return bytes.Contains(bts, []byte("cores"))
+	}, teatest.WithDuration(10*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))

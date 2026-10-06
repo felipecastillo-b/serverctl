@@ -1,11 +1,14 @@
 package app
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/config"
 	"github.com/felipecastillo-b/serverctl/internal/ui/screens"
 )
@@ -131,4 +134,46 @@ func TestRefreshTickStoresTimeAndReschedules(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("a tick must reschedule the next one")
 	}
+}
+
+// TestDataMessagesReachTheActiveScreen is the regression test for the
+// dashboard stuck on "collecting...": the router once swallowed every
+// message it did not recognize, so screen data never arrived. This drives
+// one full collection round against the collector fixtures and asserts the
+// rendered dashboard shows fixture data.
+func TestDataMessagesReachTheActiveScreen(t *testing.T) {
+	fixtureRoot := filepath.Join("..", "..", "collectors", "testdata")
+	m := NewWithSystem(config.Default(), collectors.New(fixtureRoot))
+
+	m, _ = send(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m, cmd := send(t, m, screens.RefreshMsg(time.Now()))
+	if cmd == nil {
+		t.Fatal("a refresh must trigger data collection")
+	}
+
+	// The batch carries the next tick plus the collect command; run every
+	// part and feed resulting messages back through the router, like the
+	// real Bubble Tea runtime would.
+	for _, msg := range unwrapBatch(cmd()) {
+		m, _ = send(t, m, msg)
+	}
+
+	if view := m.View(); !strings.Contains(view, "buildbox") {
+		t.Errorf("dashboard must render fixture hostname after one round, got:\n%s", view)
+	}
+}
+
+// unwrapBatch flattens a tea.BatchMsg so tests can replay every command's
+// message through Update in order.
+func unwrapBatch(msg tea.Msg) []tea.Msg {
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, cmd := range batch {
+			if cmd != nil {
+				out = append(out, unwrapBatch(cmd())...)
+			}
+		}
+		return out
+	}
+	return []tea.Msg{msg}
 }
