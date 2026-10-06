@@ -1,0 +1,9 @@
+processor	: 0
+vendor_id	: GenuineIntel
+model name	: Intel(R) Core(TM) i5-8400 CPU @ 2.80GHz
+stepping	: 10
+
+processor	: 1
+vendor_id	: GenuineIntel
+model name	: Intel(R) Core(TM) i5-8400 CPU @ 2.80GHz
+stepping	: 10
