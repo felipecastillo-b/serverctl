@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/config"
 	"github.com/felipecastillo-b/serverctl/internal/ui/help"
 	"github.com/felipecastillo-b/serverctl/internal/ui/keys"
@@ -20,9 +21,8 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
 
-// tickMsg is emitted by the refresh ticker. Screens use it to re-collect
-// their data (wired in M2); the stub screens ignore it.
-type tickMsg time.Time
+// tick produces the shared screens.RefreshMsg every configured interval;
+// the active screen re-collects its data on it (wired since M2).
 
 const (
 	// minWidth and minHeight bound the smallest terminal the shell lays
@@ -52,7 +52,7 @@ func New(cfg config.Config) Model {
 	global := keys.DefaultGlobal()
 	_ = global.ApplyOverrides(cfg.Keys)
 
-	list := screens.All()
+	list := screens.All(theme.FromName(cfg.Theme), collectors.New("/"))
 	titles := make([]string, len(list))
 	for i, s := range list {
 		titles[i] = s.Title()
@@ -77,7 +77,7 @@ func (m Model) Init() tea.Cmd {
 // tick schedules the next refresh tick after the configured interval.
 func (m Model) tick() tea.Cmd {
 	return tea.Tick(time.Duration(m.cfg.RefreshSeconds)*time.Second,
-		func(t time.Time) tea.Msg { return tickMsg(t) })
+		func(t time.Time) tea.Msg { return screens.RefreshMsg(t) })
 }
 
 // Update routes incoming messages to the shell and the active screen.
@@ -87,10 +87,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
-	case tickMsg:
+	case screens.RefreshMsg:
 		m.now = time.Time(msg)
-		// Forward the refresh tick to the active screen; the stub screens
-		// ignore it until their collectors land in M2.
+		// Forward the refresh tick to the active screen; stub screens ignore
+		// it, live screens re-collect their data on it.
 		updated, cmd := m.screens[m.active].Update(msg)
 		m.screens[m.active] = updated
 		return m, tea.Batch(cmd, m.tick())

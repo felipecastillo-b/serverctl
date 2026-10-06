@@ -124,7 +124,7 @@ func TestWindowSizeUpdatesDimensions(t *testing.T) {
 
 func TestRefreshTickStoresTimeAndReschedules(t *testing.T) {
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	m, cmd := send(t, New(config.Default()), tickMsg(now))
+	m, cmd := send(t, New(config.Default()), screens.RefreshMsg(now))
 	if !m.now.Equal(now) {
 		t.Fatalf("now = %v, want %v", m.now, now)
 	}
