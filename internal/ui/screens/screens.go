@@ -3,9 +3,20 @@
 package screens
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/felipecastillo-b/serverctl/internal/collectors"
+	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
+
+// RefreshMsg is emitted by the app shell's ticker every configured interval
+// and forwarded to the active screen; live screens re-collect their data on
+// it (ARCHITECTURE.md §5). It lives in this package because app imports
+// screens, and the message contract must not create an import cycle.
+type RefreshMsg time.Time
 
 // ID identifies a module screen. The declaration order matches the sidebar
 // order of the modules listed in ARCHITECTURE.md §3.
@@ -41,11 +52,16 @@ type Screen interface {
 	Hints() []key.Binding
 }
 
-// All returns one screen per module, in sidebar order. Until the real
-// module screens land (M2+), every entry is a placeholder stub.
-func All() []Screen {
+// All returns one screen per module, in sidebar order. The dashboard is the
+// live system overview; the remaining modules are placeholder stubs until
+// their milestones land.
+func All(th theme.Theme, sys collectors.System) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
+		if s.id == Dashboard {
+			out[i] = NewDashboard(sys, th)
+			continue
+		}
 		out[i] = s
 	}
 	return out
