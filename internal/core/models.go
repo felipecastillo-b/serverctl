@@ -60,3 +60,19 @@ type HardwareInfo struct {
 	Vendor string
 	Model  string
 }
+
+// Process is one running process read from /proc/<pid>. Jiffies is the
+// cumulative utime+stime tick counter; CpuPct is derived between two
+// samples by collectors.ProcessTracker and is 0 on the first sample.
+type Process struct {
+	PID       int
+	PPID      int
+	Name      string
+	State     byte
+	User      string
+	Cmdline   string
+	RSS       uint64
+	StartTime time.Time
+	CpuPct    float64
+	Jiffies   uint64
+}
