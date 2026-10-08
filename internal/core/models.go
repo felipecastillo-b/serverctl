@@ -64,12 +64,24 @@ type HardwareInfo struct {
 // Service is one systemd unit as reported by systemd's D-Bus API: the
 // unit name and human-readable description plus the load/active/sub
 // state triple systemd exposes (ARCHITECTURE.md §4).
+//
+// systemd offers two listings, and this one shape carries both.
+// ListUnits reports the units the manager has LOADED, with their live
+// state triple; ListUnitFiles reports every unit FILE on disk, with
+// its enablement state. FileState is that enablement state ("enabled",
+// "disabled", "static", "masked", ...; empty when systemd reports
+// none). A unit that exists only as a file — disabled and stopped, so
+// the manager never loaded it — is listed with Load "unloaded",
+// serverctl's own label for known-on-disk-but-not-loaded: systemd's
+// load states describe the fate of a loaded unit and never say
+// "unloaded".
 type Service struct {
 	Name        string
 	Description string
 	Load        string
 	Active      string
 	Sub         string
+	FileState   string
 }
 
 // Process is one running process read from /proc/<pid>. Jiffies is the
