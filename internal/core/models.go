@@ -61,6 +61,17 @@ type HardwareInfo struct {
 	Model  string
 }
 
+// Service is one systemd unit as reported by systemd's D-Bus API: the
+// unit name and human-readable description plus the load/active/sub
+// state triple systemd exposes (ARCHITECTURE.md §4).
+type Service struct {
+	Name        string
+	Description string
+	Load        string
+	Active      string
+	Sub         string
+}
+
 // Process is one running process read from /proc/<pid>. Jiffies is the
 // cumulative utime+stime tick counter; CpuPct is derived between two
 // samples by collectors.ProcessTracker and is 0 on the first sample.
