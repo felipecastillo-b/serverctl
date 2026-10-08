@@ -172,8 +172,8 @@ func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManage
 // unitColumnsFor lays out the units table for a given width; the
 // DESCRIPTION column absorbs whatever is left.
 func unitColumnsFor(width int) []table.Column {
-	// 28 unit + 10 active + 10 sub are fixed.
-	desc := width - 48
+	// 28 unit + 10 active + 10 sub + 10 enabled are fixed.
+	desc := width - 58
 	if desc < 8 {
 		desc = 8
 	}
@@ -181,6 +181,7 @@ func unitColumnsFor(width int) []table.Column {
 		{Title: "UNIT", Width: 28},
 		{Title: "ACTIVE", Width: 10},
 		{Title: "SUB", Width: 10},
+		{Title: "ENABLED", Width: 10},
 		{Title: "DESCRIPTION", Width: desc},
 	}
 }
@@ -223,12 +224,37 @@ func (s *services) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		s.reapply()
 	case unitResultMsg:
 		if msg.err != nil {
-			s.status = fmt.Sprintf("%s unit %s failed: %v", msg.verb, msg.name, msg.err)
+			if needsPrivileges(msg.err) {
+				s.status = fmt.Sprintf("%s unit %s failed: needs privileges — allow via a polkit rule or an active local session", msg.verb, msg.name)
+			} else {
+				s.status = fmt.Sprintf("%s unit %s failed: %v", msg.verb, msg.name, msg.err)
+			}
 		} else {
 			s.status = fmt.Sprintf("%s %s", msg.verb.past(), msg.name)
 		}
 	}
 	return s, nil
+}
+
+// needsPrivileges reports whether err is an authorization refusal
+// rather than a plain failure. Unit mutations ride the system bus and
+// polkit decides them; an SSH session is not an active local one, so
+// org.freedesktop.systemd1.manage-units demands interactive
+// authentication that serverctl deliberately cannot provide — there is
+// no polkit authentication agent and no password handling by design
+// (ARCHITECTURE.md §7). The raw D-Bus error dump is not actionable, so
+// Update replaces it with a hint when this returns true.
+func needsPrivileges(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	// "policykit" also matches the org.freedesktop.PolicyKit1 service
+	// name that surfaces when the polkit daemon itself is unreachable.
+	return strings.Contains(msg, "interactive authentication") ||
+		strings.Contains(msg, "access denied") ||
+		strings.Contains(msg, "polkit") ||
+		strings.Contains(msg, "policykit")
 }
 
 // collect gathers the unit listing asynchronously; the round rides back
@@ -407,7 +433,8 @@ func (s *services) reapply() {
 }
 
 // filterAndSort narrows the collected listing to .service units whose
-// name or description matches the filter query, then sorts the
+// name, description or enablement state (FileState — "disabled" finds
+// the on-disk-only units too) matches the filter query, then sorts the
 // survivors by the active column.
 func (s *services) filterAndSort() []core.Service {
 	query := strings.ToLower(strings.TrimSpace(s.filter.Value()))
@@ -418,7 +445,8 @@ func (s *services) filterAndSort() []core.Service {
 		}
 		if query != "" &&
 			!strings.Contains(strings.ToLower(unit.Name), query) &&
-			!strings.Contains(strings.ToLower(unit.Description), query) {
+			!strings.Contains(strings.ToLower(unit.Description), query) &&
+			!strings.Contains(strings.ToLower(unit.FileState), query) {
 			continue
 		}
 		out = append(out, unit)
@@ -497,7 +525,8 @@ func unitRowsFor(units []core.Service, width int) []table.Row {
 			clip(unit.Name, cols[0].Width),
 			clip(unit.Active, cols[1].Width),
 			clip(unit.Sub, cols[2].Width),
-			clip(unit.Description, cols[3].Width),
+			clip(unit.FileState, cols[3].Width),
+			clip(unit.Description, cols[4].Width),
 		})
 	}
 	return rows

@@ -53,6 +53,35 @@ make build        # produces bin/serverctl
 bin/serverctl     # prints version placeholder — the TUI arrives in milestone M1
 ```
 
+## Privileges
+
+serverctl runs unprivileged. It never escalates — no sudo, no setuid, no password
+prompts. Reads need no special rights, and mutations ask systemd over the system
+D-Bus, where PolicyKit decides whether the caller may run them.
+
+- **Reads** work as a regular user. Journal entries are richer when your user is
+  in the `systemd-journal` group, but nothing requires it.
+- **Mutations** (start/stop/restart) are polkit-gated, whitelisted, confirmed in
+  a modal, and audited locally — there is no generic command runner.
+
+From an active local session most distros let administrative users manage units
+without a password. An SSH session is not "active local" to polkit, so managing
+units over SSH typically fails with an interactive-authentication error —
+serverctl deliberately ships no polkit authentication agent. Grant the right
+explicitly instead, e.g. `/etc/polkit-1/rules.d/49-serverctl.rules`:
+
+```javascript
+// Allow members of the "serverctl" group to manage systemd units.
+polkit.addRule(function (action, subject) {
+    if (subject.isInGroup("serverctl") &&
+        action.id == "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.YES;
+    }
+});
+```
+
+Then add your user to the group: `usermod -aG serverctl $USER`.
+
 ## Project docs
 
 | Document | Contents |

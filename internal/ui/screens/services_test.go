@@ -60,16 +60,28 @@ var (
 	_ core.UnitManager = (*fakeManager)(nil)
 )
 
-// unitFixture is a loaded-units snapshot mixing .service units with
-// other unit types: only the .service units may reach the table.
+// unitFixture is a merged-listing snapshot mixing loaded .service
+// units with their enablement states and other unit types: only the
+// .service units may reach the table.
 var unitFixture = []core.Service{
-	{Name: "mysql.service", Description: "MySQL database", Load: "loaded", Active: "failed", Sub: "exit-code"},
-	{Name: "alpha.service", Description: "activating alpha", Load: "loaded", Active: "activating", Sub: "start"},
-	{Name: "sshd.service", Description: "OpenSSH server", Load: "loaded", Active: "active", Sub: "running"},
-	{Name: "nginx.service", Description: "A high performance web server", Load: "loaded", Active: "active", Sub: "running"},
-	{Name: "postgres.service", Description: "PostgreSQL database", Load: "loaded", Active: "inactive", Sub: "dead"},
+	{Name: "mysql.service", Description: "MySQL database", Load: "loaded", Active: "failed", Sub: "exit-code", FileState: "enabled"},
+	{Name: "alpha.service", Description: "activating alpha", Load: "loaded", Active: "activating", Sub: "start", FileState: "static"},
+	{Name: "sshd.service", Description: "OpenSSH server", Load: "loaded", Active: "active", Sub: "running", FileState: "enabled"},
+	{Name: "nginx.service", Description: "A high performance web server", Load: "loaded", Active: "active", Sub: "running", FileState: "enabled"},
+	{Name: "postgres.service", Description: "PostgreSQL database", Load: "loaded", Active: "inactive", Sub: "dead", FileState: "disabled"},
 	{Name: "logrotate.timer", Description: "daily rotation", Load: "loaded", Active: "active", Sub: "waiting"},
 	{Name: "dbus.socket", Description: "system bus socket", Load: "loaded", Active: "active", Sub: "running"},
+}
+
+// dockerOnDisk is the on-disk-only shape the merged collector listing
+// reports: disabled and stopped, so systemd never loaded it — the case
+// ListUnits alone never surfaces (collectors.mergeUnits).
+var dockerOnDisk = core.Service{
+	Name:      "docker.service",
+	Load:      "unloaded",
+	Active:    "inactive",
+	Sub:       "dead",
+	FileState: "disabled",
 }
 
 // newServicesScreen builds the services screen over the given fakes and
@@ -96,8 +108,16 @@ func newServicesScreen(t *testing.T, lister core.UnitLister, manager core.UnitMa
 	if !s.loaded || s.collectErr != nil {
 		t.Fatalf("fixture collection: loaded=%v err=%v", s.loaded, s.collectErr)
 	}
-	if len(s.view) != 5 {
-		t.Fatalf("fixture must keep only .service units: %d rows", len(s.view))
+	// Only the .service units of the fixture may reach the view, so
+	// the expected count follows whatever listing the test served.
+	want := 0
+	for _, u := range s.units {
+		if strings.HasSuffix(u.Name, ".service") {
+			want++
+		}
+	}
+	if len(s.view) != want {
+		t.Fatalf("fixture must keep only .service units: %d rows, want %d", len(s.view), want)
 	}
 	return s
 }
@@ -134,7 +154,7 @@ func TestServicesScreenRendersFixtureRows(t *testing.T) {
 	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
 	view := s.View(100, 24)
 	for _, want := range []string{
-		"UNIT", "ACTIVE", "SUB", "DESCRIPTION",
+		"UNIT", "ACTIVE", "SUB", "ENABLED", "DESCRIPTION",
 		"nginx.service", "A high performance web server",
 	} {
 		if !strings.Contains(view, want) {
@@ -521,7 +541,9 @@ func TestServicesListerErrorShowsNA(t *testing.T) {
 }
 
 func TestServicesManagerErrorShowsFailure(t *testing.T) {
-	manager := &fakeManager{err: errors.New("polkit says no")}
+	// A plain failure keeps the raw rendering; auth failures get the
+	// polkit hint instead (TestServicesAuthFailureHintsAtPrivileges).
+	manager := &fakeManager{err: errors.New("unit not found")}
 	s := newServicesScreen(t, &fakeLister{units: unitFixture}, manager)
 
 	updated, cmd, handled := s.UpdateKey(keyMsg("s"))
@@ -530,7 +552,98 @@ func TestServicesManagerErrorShowsFailure(t *testing.T) {
 		t.Fatal("'s' must dispatch the start verb")
 	}
 	s.Update(cmd())
-	if !strings.Contains(s.status, "failed") || !strings.Contains(s.status, "polkit says no") {
+	if !strings.Contains(s.status, "failed") || !strings.Contains(s.status, "unit not found") {
 		t.Errorf("status = %q, want the failure with the error text", s.status)
+	}
+	if strings.Contains(s.status, "needs privileges") {
+		t.Errorf("status = %q, non-auth errors must keep the raw rendering", s.status)
+	}
+}
+
+// TestServicesOnDiskOnlyUnitRenders drives the docker case end to end:
+// an on-disk-only unit arrives with the merged listing and must reach
+// the table with its enablement state in the ENABLED column.
+func TestServicesOnDiskOnlyUnitRenders(t *testing.T) {
+	listing := append(slices.Clone(unitFixture), dockerOnDisk)
+	s := newServicesScreen(t, &fakeLister{units: listing}, &fakeManager{})
+
+	// The row keeps the unloaded/inactive/dead triple the collector
+	// reported; only the ACTIVE, SUB and ENABLED cells render.
+	if idx := indexOfUnit(s.view, "docker.service"); idx < 0 {
+		t.Fatalf("docker.service missing from the view: %v", unitNames(s.view))
+	} else if s.view[idx] != dockerOnDisk {
+		t.Errorf("docker row = %+v, want %+v", s.view[idx], dockerOnDisk)
+	}
+	for _, want := range []string{"ENABLED", "docker.service", "disabled"} {
+		if out := s.View(100, 24); !strings.Contains(out, want) {
+			t.Errorf("view missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestServicesFilterMatchesEnablementState proves the filter query
+// spans FileState: "disabled" must surface the on-disk-only unit whose
+// name and (empty) description say nothing about enablement.
+func TestServicesFilterMatchesEnablementState(t *testing.T) {
+	listing := append(slices.Clone(unitFixture), dockerOnDisk)
+	s := newServicesScreen(t, &fakeLister{units: listing}, &fakeManager{})
+
+	s.UpdateKey(keyMsg("/"))
+	for _, r := range "disabled" {
+		s.UpdateKey(keyMsg(string(r)))
+	}
+	// Both disabled units match — the on-disk-only docker and the
+	// loaded-but-disabled postgres — attention order tie-breaking
+	// their equal inactive rank alphabetically.
+	if got := unitNames(s.view); !slices.Equal(got, []string{"docker.service", "postgres.service"}) {
+		t.Fatalf("filter 'disabled': %v", got)
+	}
+}
+
+// TestServicesAuthFailureHintsAtPrivileges renders the polkit case:
+// stopping a unit over SSH is not an active local session, so polkit
+// demands interactive authentication serverctl cannot provide. The
+// status line must say what to do, not dump the raw D-Bus error.
+func TestServicesAuthFailureHintsAtPrivileges(t *testing.T) {
+	manager := &fakeManager{err: errors.New("dbus: Interactive authentication required to manage units")}
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, manager)
+
+	updated, cmd, handled := s.UpdateKey(keyMsg("s"))
+	s = updated.(*services)
+	if !handled || cmd == nil {
+		t.Fatal("'s' must dispatch the start verb")
+	}
+	s.Update(cmd())
+	if !strings.Contains(s.status, "needs privileges") {
+		t.Errorf("status = %q, want the polkit hint", s.status)
+	}
+	if !strings.Contains(s.status, "polkit rule") {
+		t.Errorf("status = %q, want the actionable rule pointer", s.status)
+	}
+	if strings.Contains(s.status, "Interactive authentication") {
+		t.Errorf("status = %q, the raw error dump is not actionable and must go", s.status)
+	}
+}
+
+// TestNeedsPrivileges pins the auth-failure detector: the polkit
+// refusal wordings, case-insensitively, and the negative cases.
+func TestNeedsPrivileges(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil is not an auth failure", nil, false},
+		{"polkit interactive authentication", errors.New("Interactive authentication required."), true},
+		{"lowercase access denied", errors.New("org.freedesktop.DBus.Error.AccessDenied: access denied"), true},
+		{"polkit daemon missing", errors.New("The name org.freedesktop.PolicyKit1 was not provided by any .service files"), true},
+		{"plain failure stays plain", errors.New("unit not found"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := needsPrivileges(tt.err); got != tt.want {
+				t.Errorf("needsPrivileges(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }
