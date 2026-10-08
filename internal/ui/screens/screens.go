@@ -70,8 +70,9 @@ type Screen interface {
 }
 
 // All returns one screen per module, in sidebar order. The dashboard is the
-// live system overview; processes is the live process table; the remaining
-// modules are placeholder stubs until their milestones land.
+// live system overview, processes the live process table, and services the
+// live systemd unit table; the remaining modules are placeholder stubs
+// until their milestones land.
 func All(th theme.Theme, sys collectors.System) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
@@ -80,6 +81,10 @@ func All(th theme.Theme, sys collectors.System) []Screen {
 			out[i] = NewDashboard(sys, th)
 		case Processes:
 			out[i] = NewProcesses(sys, th, actions.Actor{})
+		case Services:
+			// collectors.System implements core.UnitLister over D-Bus
+			// and actions.Actor implements core.UnitManager (m4a).
+			out[i] = NewServices(sys, th, actions.Actor{})
 		default:
 			out[i] = s
 		}
