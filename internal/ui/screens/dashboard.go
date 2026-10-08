@@ -111,6 +111,12 @@ func (d *dashboard) collect() tea.Cmd {
 // Title implements Screen.
 func (d *dashboard) Title() string { return "Dashboard" }
 
+// UpdateKey never claims a key: the dashboard binds no screen-local keys.
+func (d *dashboard) UpdateKey(tea.KeyMsg) (Screen, tea.Cmd, bool) { return d, nil, false }
+
+// UpdateMouse never claims a mouse event.
+func (d *dashboard) UpdateMouse(tea.MouseMsg) (Screen, tea.Cmd, bool) { return d, nil, false }
+
 // Hints implements Screen: the dashboard binds no screen-local keys in M2.
 func (d *dashboard) Hints() []key.Binding { return nil }
 

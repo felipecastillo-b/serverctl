@@ -116,13 +116,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey applies the input rules of ARCHITECTURE.md §6. While the help
 // overlay is open it is modal: only its close keys act and everything else
-// is swallowed.
+// is swallowed. Otherwise the active screen's keymap shadows the global
+// one per key: sort, filter and signal bindings are claimed before any
+// global action can fire.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		if key.Matches(msg, m.keys.Help, m.keys.Back) {
 			m.showHelp = false
 		}
 		return m, nil
+	}
+
+	updated, cmd, handled := m.screens[m.active].UpdateKey(msg)
+	if handled {
+		m.screens[m.active] = updated
+		return m, cmd
 	}
 
 	switch {
@@ -150,13 +158,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMouse activates sidebar entries on left-button press. The sidebar
-// column starts below the one-row header, so screen row y maps to sidebar
-// row y-1. Like the keyboard, it is inert while the help overlay is open.
+// handleMouse offers every press to the active screen first: a screen
+// with an open confirmation modal is exclusive and swallows the event
+// before the shell acts (ARCHITECTURE.md §7). Unclaimed presses fall
+// through to the sidebar hit-test: the sidebar column starts below the
+// one-row header, so screen row y maps to sidebar row y-1. The keyboard
+// stays inert while the help overlay is open.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m, nil
 	}
+
+	updated, cmd, handled := m.screens[m.active].UpdateMouse(msg)
+	if handled {
+		m.screens[m.active] = updated
+		return m, cmd
+	}
+
 	event := tea.MouseEvent(msg)
 	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
 		return m, nil

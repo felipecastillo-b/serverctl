@@ -35,6 +35,12 @@ func (s stub) Init() tea.Cmd { return nil }
 // the real screens in M2.
 func (s stub) Update(tea.Msg) (Screen, tea.Cmd) { return s, nil }
 
+// UpdateKey never claims a key: stubs expose no screen-local bindings.
+func (s stub) UpdateKey(tea.KeyMsg) (Screen, tea.Cmd, bool) { return s, nil, false }
+
+// UpdateMouse never claims a mouse event.
+func (s stub) UpdateMouse(tea.MouseMsg) (Screen, tea.Cmd, bool) { return s, nil, false }
+
 // View renders the placeholder as plain text clipped to the given bounds.
 // Styling is the app shell's job, not the screen's.
 func (s stub) View(width, height int) string {

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/felipecastillo-b/serverctl/internal/actions"
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
@@ -17,6 +18,14 @@ import (
 // it (ARCHITECTURE.md §5). It lives in this package because app imports
 // screens, and the message contract must not create an import cycle.
 type RefreshMsg time.Time
+
+// SignalSender is the mutating surface a screen may call, satisfied by
+// actions.Actor. Tests inject fakes so screen state machines can be
+// exercised without touching real processes (ARCHITECTURE.md §4: actions
+// is the only mutating layer).
+type SignalSender interface {
+	Signal(pid int, sig actions.ProcessSignal) error
+}
 
 // ID identifies a module screen. The declaration order matches the sidebar
 // order of the modules listed in ARCHITECTURE.md §3.
@@ -43,6 +52,14 @@ type Screen interface {
 	// Update handles a message routed by the root model and returns the
 	// possibly updated screen.
 	Update(tea.Msg) (Screen, tea.Cmd)
+	// UpdateKey offers a keypress to the screen BEFORE the global keymap:
+	// the active screen's keymap shadows the global one (ARCHITECTURE.md
+	// §6). handled reports whether the screen consumed the key.
+	UpdateKey(tea.KeyMsg) (Screen, tea.Cmd, bool)
+	// UpdateMouse offers a mouse event to the screen BEFORE the shell's
+	// sidebar hit-test; handled reports consumption. A screen with an
+	// open modal must swallow every event.
+	UpdateMouse(tea.MouseMsg) (Screen, tea.Cmd, bool)
 	// View renders the screen within the given bounds in terminal cells.
 	View(width, height int) string
 	// Title is the short module name shown in the header and sidebar.
@@ -53,16 +70,19 @@ type Screen interface {
 }
 
 // All returns one screen per module, in sidebar order. The dashboard is the
-// live system overview; the remaining modules are placeholder stubs until
-// their milestones land.
+// live system overview; processes is the live process table; the remaining
+// modules are placeholder stubs until their milestones land.
 func All(th theme.Theme, sys collectors.System) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
-		if s.id == Dashboard {
+		switch s.id {
+		case Dashboard:
 			out[i] = NewDashboard(sys, th)
-			continue
+		case Processes:
+			out[i] = NewProcesses(sys, th, actions.Actor{})
+		default:
+			out[i] = s
 		}
-		out[i] = s
 	}
 	return out
 }
