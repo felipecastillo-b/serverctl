@@ -51,3 +51,19 @@ type JournalReader interface {
 // no longer holds — rotated or vacuumed away — and the caller's move
 // is to re-Tail from the head.
 var ErrStaleCursor = errors.New("journal cursor is stale: entry rotated out of the journal")
+
+// StorageLister is the Storage module's read port: the block devices
+// and mounted filesystems the Storage screen lists. collectors.System
+// implements it over /proc/mounts, statfs and /proc/diskstats
+// (ARCHITECTURE.md §3, §8); the screen consumes it on the module's own
+// 30 s cadence. The exact row policy — which filesystems plain df
+// would show, which disks appear — is collector territory and lives
+// in the implementer's doc comment, as with UnitLister.
+type StorageLister interface {
+	// Disks lists the block devices of /sys/block with their sizes,
+	// models, partitions and completed-I/O-op counters.
+	Disks() ([]Disk, error)
+	// Filesystems lists the mounted filesystems of /proc/mounts with
+	// their statfs usage — the rows plain df shows by default.
+	Filesystems() ([]Partition, error)
+}
