@@ -1,0 +1,14 @@
+%NAME%
+linux
+
+%VERSION%
+6.6.8-1
+
+%BASE%
+linux
+
+%DESC%
+The Linux kernel and modules
+
+%ARCH%
+x86_64
