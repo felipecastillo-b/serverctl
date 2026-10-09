@@ -99,6 +99,11 @@ func All(th theme.Theme, sys collectors.System) []Screen {
 			// /proc/net/dev + netlink and core.SocketLister over
 			// /proc/net/{tcp,tcp6,udp,udp6} (m5b).
 			out[i] = NewNetwork(sys, sys, th)
+		case Packages:
+			// collectors.System implements core.PackageCounter over
+			// the pacman local database with a `pacman -Qq` fixed-argv
+			// fallback (m6a).
+			out[i] = NewPackages(sys, th)
 		default:
 			out[i] = s
 		}
