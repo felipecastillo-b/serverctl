@@ -125,3 +125,33 @@ func TestLogsScreenBootsAndRenders(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 }
+
+// TestStorageScreenBootsAndRenders smoke-tests m5a end to end in a
+// live pty: tab four times into the storage module, wait until a real
+// /proc/mounts + statfs round flowed through collect → route → table
+// (the status line only renders its "filesystems ·" summary after the
+// first round lands), then quit. Every Linux host mounts a root
+// filesystem, so the summary is a stable marker that names no specific
+// mount. Skipped in -short mode alongside the other pty smoke tests.
+func TestStorageScreenBootsAndRenders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: reads the real /proc/mounts and statfs in a pty")
+	}
+
+	tm := teatest.NewTestModel(t, New(config.Default()),
+		teatest.WithInitialTermSize(100, 30))
+
+	// Dashboard is active at boot; four tabs move to Storage.
+	for range 4 {
+		tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	}
+
+	// One WaitFor only: it consumes the output stream, and the renderer
+	// skips unchanged lines (see TestShellBootsAndQuits).
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("filesystems ·"))
+	}, teatest.WithDuration(10*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
