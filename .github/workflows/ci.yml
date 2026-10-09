@@ -14,6 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install systemd headers
+        # sdjournal (go-systemd) is cgo: it compiles against
+        # systemd/sd-journal.h. Runtime resolves libsystemd via dlopen,
+        # which any systemd host provides; only the headers are a
+        # build-time dependency.
+        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -35,6 +42,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install systemd headers
+        # golangci-lint typechecks the cgo sdjournal package too.
+        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev
 
       - name: Set up Go
         uses: actions/setup-go@v5

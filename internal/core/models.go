@@ -84,6 +84,22 @@ type Service struct {
 	FileState   string
 }
 
+// JournalEntry is one systemd journal line as the Logs screen shows it
+// (ARCHITECTURE.md §4): when it happened, which unit wrote it, the
+// syslog priority (0 emerg … 7 debug; journald allows entries without
+// a priority, which read as info/6 here) and the message text.
+//
+// Unprivileged journal visibility: a user outside the systemd-journal
+// (or adm) group sees only the entries of their own session, so a dev
+// box or CI runner can legitimately show an empty or sparse journal —
+// that is journald's access model, not a collector failure.
+type JournalEntry struct {
+	Time     time.Time
+	Unit     string
+	Priority int
+	Message  string
+}
+
 // Process is one running process read from /proc/<pid>. Jiffies is the
 // cumulative utime+stime tick counter; CpuPct is derived between two
 // samples by collectors.ProcessTracker and is 0 on the first sample.

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/coreos/go-systemd/v22/dbus"
 
+	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/config"
 )
 
@@ -83,6 +84,42 @@ func TestServicesScreenBootsAndRenders(t *testing.T) {
 	// skips unchanged lines (see TestShellBootsAndQuits).
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		return bytes.Contains(bts, []byte("services · sort"))
+	}, teatest.WithDuration(10*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
+
+// TestLogsScreenBootsAndRenders smoke-tests M4c end to end in a live
+// pty: tab three times into the logs module, wait until a real
+// sdjournal round flowed through tail → route → viewport, then quit.
+// The marker is the status line's "N lines ·" summary, which renders
+// after the first round lands regardless of journal CONTENT — an
+// unprivileged CI user who legitimately sees zero entries (only their
+// own session's, see core.JournalEntry) still gets "0 lines ·", so the
+// marker cannot flake on content. Boxes whose journal cannot be opened
+// at all skip via the pre-flight probe, mirroring the services test's
+// bus guard.
+func TestLogsScreenBootsAndRenders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: reads the real system journal in a pty")
+	}
+	if _, _, err := collectors.New("/").Tail("", 1); err != nil {
+		t.Skipf("journal unreadable: %v", err)
+	}
+
+	tm := teatest.NewTestModel(t, New(config.Default()),
+		teatest.WithInitialTermSize(100, 30))
+
+	// Dashboard is active at boot; three tabs move to Logs.
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+
+	// One WaitFor only: it consumes the output stream, and the renderer
+	// skips unchanged lines (see TestShellBootsAndQuits).
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("lines · "))
 	}, teatest.WithDuration(10*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
