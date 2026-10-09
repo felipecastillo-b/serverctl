@@ -67,3 +67,35 @@ type StorageLister interface {
 	// their statfs usage — the rows plain df shows by default.
 	Filesystems() ([]Partition, error)
 }
+
+// NetLister is the Network module's read port: one snapshot of the
+// host's interfaces with their traffic counters. collectors.System
+// implements it over /proc/net/dev for the counters and the standard
+// library's net walker for names, addresses and flags (ARCHITECTURE.md
+// §3, §8); the screen consumes it on the module's 2 s cadence. The
+// exact row policy — which interfaces appear, what an address listing
+// contains — is collector territory and lives in the implementer's
+// doc comment, as with UnitLister.
+type NetLister interface {
+	// Interfaces lists the host's network interfaces with their
+	// cumulative receive/transmit byte counters; rates stay zero
+	// here and are the consumer's delta math.
+	Interfaces() ([]NetworkInterface, error)
+}
+
+// SocketLister is the ports-and-connections half of the Network
+// module: the listening sockets and the socket pairs in flight, read
+// from /proc/net/{tcp,tcp6,udp,udp6} (ARCHITECTURE.md §3 lists ports
+// and connections as one module at a 5 s cadence). collectors.System
+// implements it over procfs; the row policy — which states count as
+// listening, how PIDs resolve — is collector territory documented on
+// the implementer, as with NetLister.
+type SocketLister interface {
+	// Listeners lists the sockets bound and waiting for peers: TCP
+	// LISTEN sockets and unconnected UDP sockets, deduplicated per
+	// protocol, address and port.
+	Listeners() ([]ListenPort, error)
+	// Connections lists the socket pairs in flight: TCP sockets in
+	// every state but LISTEN, plus connected UDP sockets.
+	Connections() ([]Connection, error)
+}

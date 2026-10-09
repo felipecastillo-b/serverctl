@@ -94,6 +94,11 @@ func All(th theme.Theme, sys collectors.System) []Screen {
 			// collectors.System implements core.StorageLister over
 			// /proc/mounts, statfs and /proc/diskstats (m5a).
 			out[i] = NewStorage(sys, th)
+		case Network:
+			// collectors.System implements core.NetLister over
+			// /proc/net/dev + netlink and core.SocketLister over
+			// /proc/net/{tcp,tcp6,udp,udp6} (m5b).
+			out[i] = NewNetwork(sys, sys, th)
 		default:
 			out[i] = s
 		}
