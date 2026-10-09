@@ -71,8 +71,9 @@ type Screen interface {
 
 // All returns one screen per module, in sidebar order. The dashboard is the
 // live system overview, processes the live process table, services the live
-// systemd unit table, and logs the live journal tail; the remaining modules
-// are placeholder stubs until their milestones land.
+// systemd unit table, logs the live journal tail, and storage the live
+// filesystem and disk tables; the remaining modules are placeholder stubs
+// until their milestones land.
 func All(th theme.Theme, sys collectors.System) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
@@ -89,6 +90,10 @@ func All(th theme.Theme, sys collectors.System) []Screen {
 			// collectors.System implements core.JournalReader over
 			// sdjournal (m4c).
 			out[i] = NewLogs(sys, th)
+		case Storage:
+			// collectors.System implements core.StorageLister over
+			// /proc/mounts, statfs and /proc/diskstats (m5a).
+			out[i] = NewStorage(sys, th)
 		default:
 			out[i] = s
 		}

@@ -115,3 +115,49 @@ type Process struct {
 	CpuPct    float64
 	Jiffies   uint64
 }
+
+// Partition is one mounted filesystem as the Storage screen lists it
+// (ARCHITECTURE.md §4 sketch, grown by the Storage milestone the way
+// Process grew CpuPct): the device, its mount point and type, plus
+// usage in bytes. Total/Used/Avail are statfs byte counts — Total =
+// f_blocks×f_bsize, Used = (f_blocks−f_bfree)×f_bsize, Avail =
+// f_bavail×f_bsize — the exact values `df -B1` prints. Avail is what
+// an unprivileged user may still claim: root-reserved blocks count as
+// Used, matching df's Available column. UsedPct is df's Use% formula,
+// used/(used+avail)×100 — the denominator is the non-root total, NOT
+// the filesystem size, so a filesystem whose user-claimable space is
+// exhausted reads as 100% while reserved blocks remain; df rounds the
+// value up to the next integer for display (44.85 shows as 45%).
+// A row without usage data — the parser-only rows of a fixture
+// system, or a live mount whose statfs failed — carries zeros and 0%
+// instead of vanishing from the listing.
+type Partition struct {
+	Device  string
+	Mount   string
+	FSType  string
+	Total   uint64
+	Used    uint64
+	Avail   uint64
+	UsedPct float64
+}
+
+// Disk is one block device of /sys/block as the Storage screen lists
+// it (ARCHITECTURE.md §4 sketch plus the I/O counters): the device
+// name (directory base, e.g. "sda"), the vendor model string when
+// sysfs carries one (virtual devices like loop or zram have no
+// device/model file and read as ""), and SizeBytes from sysfs's
+// 512-byte sector count. Partitions are the device's partition
+// subdirectories (sda1, sda2, ...): each carries Device and Total
+// (its own size) with an empty Mount and FSType — a partition row is
+// geometry, not a mounted filesystem. Reads and Writes are the
+// completed-I/O-op counters of /proc/diskstats fields 4 and 8,
+// cumulative since boot; a collector that cannot join diskstats
+// leaves them at zero rather than dropping the disk.
+type Disk struct {
+	Name       string
+	Model      string
+	SizeBytes  uint64
+	Partitions []Partition
+	Reads      uint64
+	Writes     uint64
+}
