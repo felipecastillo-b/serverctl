@@ -19,7 +19,7 @@
 | M3 — Processes | Process list with sort/filter, signal actions with confirmation | A process can be inspected and signalled end-to-end |
 | M4 — Services & logs | Unit list, start/stop/restart with confirmation, journal viewer | Service lifecycle works via D-Bus; journal tails live |
 | M5 — Storage & network | Disks/partitions/usage, interfaces/traffic, listening ports, connections | Values match system tools (`df`, `ip`, `ss`) |
-| M6 — Packages & access | pacman packages + available updates, users/sessions, SSH attempts | Package inventory and access audit views populated |
+| M6 — Packages & access | Installed package count (Arch first, counting adapter extensible to other distros), users/sessions, SSH attempts | Package count and access audit views populated |
 | M7 — UX polish | Command palette, dark/light theme refinement, configurable intervals, error surfaces | Palette covers all modules; stale/error states visible |
 | M8 — Release engineering | goreleaser pipeline, PKGBUILD/AUR, docs, v1.0.0 | v1.0.0 tagged; installable from release assets and AUR |
 
