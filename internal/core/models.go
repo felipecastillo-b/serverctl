@@ -161,3 +161,60 @@ type Disk struct {
 	Reads      uint64
 	Writes     uint64
 }
+
+// NetworkInterface is one host network interface as the Network
+// screen lists it (ARCHITECTURE.md §4 sketch plus the rate fields the
+// milestone adds, the way Partition grew its usage columns): the
+// interface name, the hardware address in aa:bb:cc:dd:ee:ff form
+// ("" when the interface has none — loopback and tunnels carry no
+// MAC), every configured address as its bare IP string ("127.0.0.1",
+// "::1"; the screen joins and brackets them for display), the up
+// flag, and the cumulative receive/transmit byte counters of
+// /proc/net/dev since boot. RxRate and TxRate are bytes per second,
+// derived by collectors.NetTracker between two listings — a listing
+// straight from the collector carries zeros and the consuming screen
+// fills the rates in, mirroring how Process.CpuPct stays zero until
+// ProcessTracker has two samples.
+type NetworkInterface struct {
+	Name           string
+	MAC            string
+	Addrs          []string
+	Up             bool
+	Rx, Tx         uint64
+	RxRate, TxRate float64
+}
+
+// ListenPort is one socket bound and waiting for peers, as the
+// Network screen's ports view lists it (ARCHITECTURE.md §4): TCP
+// sockets in LISTEN state and unconnected UDP sockets of
+// /proc/net/{tcp,tcp6,udp,udp6}, with Proto in ss's netid spelling
+// (tcp, tcp6, udp, udp6). PID and Process are best-effort: they are
+// resolved by walking /proc/<pid>/fd readlinks for the socket's
+// inode, which an unprivileged reader can only do for processes it
+// can see — a socket owned by another user's process or by the
+// kernel reads as PID 0 and Process "" instead of vanishing from
+// the listing.
+type ListenPort struct {
+	Proto   string
+	Addr    string
+	Port    uint16
+	PID     int
+	Process string
+}
+
+// Connection is one socket pair in flight, as the Network screen's
+// connections view lists it. This model has no ARCHITECTURE.md §4
+// sketch — it joins the models as a milestone convention the way the
+// screen needs it: every TCP socket that is not a listener (its full
+// state as ss spells it: ESTABLISHED, TIME_WAIT, ...) plus connected
+// UDP sockets. A connected UDP socket has no kernel state machine, so
+// its State reads CONNECTED — serverctl's own label, chosen to read
+// as a state alongside the TCP names.
+type Connection struct {
+	Proto      string
+	LocalAddr  string
+	LocalPort  uint16
+	RemoteAddr string
+	RemotePort uint16
+	State      string
+}
