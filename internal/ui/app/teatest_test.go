@@ -155,3 +155,34 @@ func TestStorageScreenBootsAndRenders(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 }
+
+// TestNetworkScreenBootsAndRenders smoke-tests m5b end to end in a
+// live pty: tab five times into the network module, wait until a real
+// /proc/net/dev + netlink round flowed through collect → track →
+// route → table (the status line only renders its "interfaces ·"
+// summary after the first interfaces round lands), then quit. Every
+// Linux host has a loopback interface, so the summary is a stable
+// marker that names no specific interface. Skipped in -short mode
+// alongside the other pty smoke tests.
+func TestNetworkScreenBootsAndRenders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: reads the real /proc/net/dev and netlink in a pty")
+	}
+
+	tm := teatest.NewTestModel(t, New(config.Default()),
+		teatest.WithInitialTermSize(100, 30))
+
+	// Dashboard is active at boot; five tabs move to Network.
+	for range 5 {
+		tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	}
+
+	// One WaitFor only: it consumes the output stream, and the renderer
+	// skips unchanged lines (see TestShellBootsAndQuits).
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("interfaces ·"))
+	}, teatest.WithDuration(10*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
