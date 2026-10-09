@@ -27,7 +27,7 @@ action whitelisted and gated behind a confirmation prompt.
 - Storage: disks, partitions, usage
 - Network interfaces and live traffic
 - Listening ports and active connections
-- Packages and available updates via pacman
+- Installed package count via pacman's local database (other distros planned)
 - Users and login sessions
 - SSH login attempt audit
 - Hardware sensors via hwmon

@@ -43,7 +43,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Entrypoint | CLI flags, config load, process wiring | `cmd/serverctl` |
 | Config | YAML config: theme (dark/light), keybindings, refresh interval | `internal/config` |
 | Core | Domain models, module registry, collector/action interfaces (ports) | `internal/core` |
-| Collectors | Read-only adapters: procfs (`/proc`), sysfs/hwmon (`/sys`), systemd via D-Bus (`go-systemd`), journal (`sdjournal`), pacman adapter (controlled argv), login records (`/var/log/wtmp`, `lastlog`) | `internal/collectors` |
+| Collectors | Read-only adapters: procfs (`/proc`), sysfs/hwmon (`/sys`), systemd via D-Bus (`go-systemd`), journal (`sdjournal`), pacman local database (package count), login records (`/var/log/wtmp`, `lastlog`) | `internal/collectors` |
 | Actions | **Only layer allowed to mutate**: whitelisted service start/stop/restart via D-Bus and process signals, each gated by confirmation | `internal/actions` |
 | UI | Bubble Tea root model, screen router, sidebar, reusable components (table, modal, palette, help overlay), themes, keymap | `internal/ui` |
 
@@ -58,7 +58,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Storage | `/proc/mounts`, `statfs`, `/proc/diskstats` | 30 s |
 | Network | `/proc/net/dev`, sysfs | 2 s |
 | Ports / connections | `/proc/net/{tcp,tcp6,udp,udp6,unix}` | 5 s |
-| Packages | pacman adapter (fixed argv) | on demand |
+| Packages | pacman local database (installed count; other distros post-MVP) | on demand |
 | Users / sessions | utmp, logind D-Bus | 10 s |
 | SSH audit | `/var/log/wtmp`, journal of `sshd` | 30 s |
 | Sensors | `/sys/class/hwmon` | 3 s |
@@ -130,9 +130,10 @@ type ListenPort struct {
     PID         int
     Process     string
 }
-type Package struct {
-    Name, Version string
-    UpdateTo      string // empty when up to date
+type PackageCount struct { // M6: installed count only; per-package
+    Distro    string         // listings arrive with multi-distro support,
+    Manager   string         // post-MVP
+    Installed int
 }
 type UserSession struct {
     User, TTY, From string
@@ -174,7 +175,7 @@ type SSHAttempt struct {
 
 ## 8. System information strategy
 
-Prefer kernel interfaces over shelling out. When a command is unavoidable (pacman, checkupdates), it runs with fixed argv, a timeout, and its output is parsed — never re-interpolated.
+Prefer kernel interfaces over shelling out. When a command is unavoidable (pacman fallback, post-MVP distro package managers), it runs with fixed argv, a timeout, and its output is parsed — never re-interpolated.
 
 | Info area | Preferred source | Fallback |
 |-----------|------------------|----------|
@@ -190,7 +191,7 @@ Prefer kernel interfaces over shelling out. When a command is unavoidable (pacma
 | Processes | `/proc/<pid>/` | — |
 | Services | systemd D-Bus API (`go-systemd`) | — |
 | Journal | `sdjournal` API | — |
-| Packages | pacman adapter, fixed argv + timeout | — |
+| Installed package count | pacman local database directory (`/var/lib/pacman/local`) | `pacman -Qq` (fixed argv, timeout) |
 | Users / sessions | utmp file, logind D-Bus | `lastlog` file |
 | SSH attempts | `wtmp`, journal of `sshd` unit | auth log parsing |
 
