@@ -69,11 +69,13 @@ type Screen interface {
 	Hints() []key.Binding
 }
 
-// All returns one screen per module, in sidebar order. The dashboard is the
-// live system overview, processes the live process table, services the live
-// systemd unit table, logs the live journal tail, and storage the live
-// filesystem and disk tables; the remaining modules are placeholder stubs
-// until their milestones land.
+// All returns one screen per module, in sidebar order, wired to the
+// live collectors.System: the dashboard (system overview), processes,
+// services (systemd units), logs (journal tail), storage (mounts and
+// disks), network (interfaces and sockets), packages (installed
+// count) and users (login sessions and SSH attempts). A module whose
+// milestone has not landed yet would keep its catalog stub; with m6b
+// all eight are live.
 func All(th theme.Theme, sys collectors.System) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
@@ -104,6 +106,11 @@ func All(th theme.Theme, sys collectors.System) []Screen {
 			// the pacman local database with a `pacman -Qq` fixed-argv
 			// fallback (m6a).
 			out[i] = NewPackages(sys, th)
+		case Users:
+			// collectors.System implements core.SessionLister over
+			// the utmp file and core.SSHAttemptLister over the sshd
+			// unit's journal (m6b).
+			out[i] = NewAccess(sys, sys, th)
 		default:
 			out[i] = s
 		}
