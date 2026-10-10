@@ -1,0 +1,6 @@
+filesystem
+glibc
+bash
+linux
+pacman
+vim

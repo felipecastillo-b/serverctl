@@ -16,7 +16,7 @@ var catalog = []stub{
 	{id: Logs, title: "Logs", description: "Systemd journal entries, followed live."},
 	{id: Storage, title: "Storage", description: "Mounts, filesystem usage and disk activity."},
 	{id: Network, title: "Network", description: "Interfaces, addresses and traffic counters."},
-	{id: Packages, title: "Packages", description: "Installed packages and pending updates."},
+	{id: Packages, title: "Packages", description: "Installed package count, distro and package manager."},
 	{id: Users, title: "Users", description: "Logged-in users and active sessions."},
 }
 

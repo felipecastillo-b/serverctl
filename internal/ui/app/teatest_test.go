@@ -12,6 +12,9 @@ import (
 
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/config"
+	"github.com/felipecastillo-b/serverctl/internal/core"
+	"github.com/felipecastillo-b/serverctl/internal/ui/screens"
+	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
 
 // TestShellBootsAndQuits is the interactive smoke test: the full TUI boots
@@ -181,6 +184,53 @@ func TestNetworkScreenBootsAndRenders(t *testing.T) {
 	// skips unchanged lines (see TestShellBootsAndQuits).
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		return bytes.Contains(bts, []byte("interfaces ·"))
+	}, teatest.WithDuration(10*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
+
+// fakePackageCounter serves one fixed round for the m6a smoke; the
+// smoke must inject it through the shell's screen list because the
+// app builds every screen from the live System.
+type fakePackageCounter struct{}
+
+func (fakePackageCounter) Count() (core.PackageCount, error) {
+	return core.PackageCount{Distro: "arch", Manager: "pacman", Installed: 588}, nil
+}
+
+// TestPackagesScreenBootsAndRenders smoke-tests m6a end to end in a
+// live pty: tab six times into the packages module, wait until the
+// fake port's round flowed through collect → route → view (the status
+// line only renders its "packages ·" summary after the first round
+// lands), then quit. The M5 smokes could read the live system for
+// their markers because every Linux host has mounts and a loopback
+// interface; the pacman local database exists only on Arch hosts — CI
+// runs Ubuntu, where both the database and the `pacman -Qq` fallback
+// are absent — so this smoke swaps the packages screen for a fake
+// port (ARCHITECTURE.md §10: tests run against fakes) and its marker
+// stays deterministic on every host. Skipped in -short mode alongside
+// the other pty smokes.
+func TestPackagesScreenBootsAndRenders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: boots the full TUI in a pty")
+	}
+
+	cfg := config.Default()
+	m := New(cfg)
+	m.screens[screens.Packages] = screens.NewPackages(fakePackageCounter{}, theme.FromName(cfg.Theme))
+
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 30))
+
+	// Dashboard is active at boot; six tabs move to Packages.
+	for range 6 {
+		tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	}
+
+	// One WaitFor only: it consumes the output stream, and the renderer
+	// skips unchanged lines (see TestShellBootsAndQuits).
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("packages ·"))
 	}, teatest.WithDuration(10*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})

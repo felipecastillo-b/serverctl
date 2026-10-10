@@ -1,0 +1,11 @@
+%NAME%
+vim
+
+%VERSION%
+9.1.0700-1
+
+%DESC%
+Vi Improved, a programmer's text editor
+
+%ARCH%
+x86_64
