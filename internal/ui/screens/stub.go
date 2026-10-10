@@ -17,7 +17,7 @@ var catalog = []stub{
 	{id: Storage, title: "Storage", description: "Mounts, filesystem usage and disk activity."},
 	{id: Network, title: "Network", description: "Interfaces, addresses and traffic counters."},
 	{id: Packages, title: "Packages", description: "Installed package count, distro and package manager."},
-	{id: Users, title: "Users", description: "Logged-in users, active sessions and recent SSH attempts."},
+	{id: Users, title: "Users", description: "Logged-in users and active sessions."},
 }
 
 // stub is a placeholder screen shown while the real module screens are

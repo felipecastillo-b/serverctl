@@ -115,33 +115,3 @@ type PackageCounter interface {
 	// distro and manager that produced it.
 	Count() (PackageCount, error)
 }
-
-// SessionLister is the Users module's sessions read port: the
-// host's current login sessions. collectors.System implements it
-// over the utmp file (ARCHITECTURE.md §3, §8) — logind D-Bus, the
-// preferred source, is the post-MVP adapter; the exact row policy,
-// which utmp record types count as a session, is collector
-// territory and lives in the implementer's doc comment, as with
-// UnitLister. The port is source-agnostic by construction: nothing
-// utmp-shaped leaks into the contract, so the logind adapter can
-// replace the file reader without this contract or the screen
-// changing.
-type SessionLister interface {
-	// Sessions returns the current login sessions, in login order
-	// — utmp file order, oldest login first.
-	Sessions() ([]UserSession, error)
-}
-
-// SSHAttemptLister is the Users module's audit read port: recent SSH
-// login attempts, bounded. collectors.System implements it over the
-// sshd unit's journal through the Logs module's sdjournal machinery
-// (ARCHITECTURE.md §3, §8); the wtmp and auth-log fallbacks are
-// post-MVP adapters that plug in beside it. The bound is the
-// implementer's policy — the way UnitLister owns its listing
-// strategy — and nothing journal-shaped leaks into the contract,
-// so the port survives its sources changing.
-type SSHAttemptLister interface {
-	// Attempts returns the most recent SSH login attempts, newest
-	// first, never more than the implementer's bound.
-	Attempts() ([]SSHAttempt, error)
-}
