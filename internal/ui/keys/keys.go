@@ -13,6 +13,7 @@ import (
 // Global holds the bindings available on every screen.
 type Global struct {
 	Quit       key.Binding
+	Palette    key.Binding
 	Help       key.Binding
 	NextScreen key.Binding
 	PrevScreen key.Binding
@@ -25,7 +26,11 @@ type Global struct {
 // DefaultGlobal returns the built-in global bindings.
 func DefaultGlobal() Global {
 	return Global{
-		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit: key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		// ctrl+p is the classic palette key; no screen or global
+		// binding claims it (screens claim plain letters plus
+		// ctrl+u/ctrl+d for half-paging).
+		Palette:    key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "palette")),
 		Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		NextScreen: key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next module")),
 		PrevScreen: key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev module")),
@@ -40,7 +45,7 @@ func DefaultGlobal() Global {
 // overlay to render.
 func (g Global) Bindings() []key.Binding {
 	return []key.Binding{
-		g.Quit, g.Help, g.NextScreen, g.PrevScreen, g.Up, g.Down, g.Select, g.Back,
+		g.Quit, g.Palette, g.Help, g.NextScreen, g.PrevScreen, g.Up, g.Down, g.Select, g.Back,
 	}
 }
 
@@ -48,6 +53,7 @@ func (g Global) Bindings() []key.Binding {
 // exact names accepted in the config file's `keys` section.
 var slots = map[string]func(*Global) *key.Binding{
 	"quit":        func(g *Global) *key.Binding { return &g.Quit },
+	"palette":     func(g *Global) *key.Binding { return &g.Palette },
 	"help":        func(g *Global) *key.Binding { return &g.Help },
 	"next_screen": func(g *Global) *key.Binding { return &g.NextScreen },
 	"prev_screen": func(g *Global) *key.Binding { return &g.PrevScreen },

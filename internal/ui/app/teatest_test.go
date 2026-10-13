@@ -190,6 +190,44 @@ func TestNetworkScreenBootsAndRenders(t *testing.T) {
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 }
 
+// TestPaletteJumpsToModuleByFragment smoke-tests m7a end to end in a
+// live pty: open the palette, type a fragment that matches one module,
+// enter, and the shell jumps there — the "sort cpu" status marker
+// renders only after the processes screen's first collection round, so
+// it proves palette → jump → setActive → collect → route → render. The
+// shell reads the golden /proc fixtures (the processes_nav injection
+// pattern) so the round is deterministic on every host. Skipped in
+// -short mode alongside the other pty smokes.
+func TestPaletteJumpsToModuleByFragment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: boots the full TUI in a pty")
+	}
+
+	cfg := config.Default()
+	m := NewWithSystem(cfg, collectors.New("../../collectors/testdata"))
+
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 30))
+
+	// Open the palette and type "proc": it matches Processes only, so
+	// enter must land there. If the palette failed to open, the runes
+	// would go to the dashboard screen and the marker would never come.
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	for _, r := range "proc" {
+		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// One WaitFor only: it consumes the output stream, and the renderer
+	// skips unchanged lines (see TestShellBootsAndQuits). The marker
+	// renders after the first fixture collection round lands.
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("sort cpu"))
+	}, teatest.WithDuration(10*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
+
 // fakePackageCounter serves one fixed round for the m6a smoke; the
 // smoke must inject it through the shell's screen list because the
 // app builds every screen from the live System.

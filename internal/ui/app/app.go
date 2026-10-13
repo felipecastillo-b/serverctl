@@ -1,6 +1,6 @@
 // Package app wires the root Bubble Tea model of serverctl: it hosts the
 // sidebar, the active screen, the refresh ticker, the global keymap, mouse
-// input and the help overlay.
+// input, the help overlay and the command palette.
 package app
 
 import (
@@ -16,6 +16,7 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/config"
 	"github.com/felipecastillo-b/serverctl/internal/ui/help"
 	"github.com/felipecastillo-b/serverctl/internal/ui/keys"
+	"github.com/felipecastillo-b/serverctl/internal/ui/palette"
 	"github.com/felipecastillo-b/serverctl/internal/ui/screens"
 	"github.com/felipecastillo-b/serverctl/internal/ui/sidebar"
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
@@ -40,9 +41,13 @@ type Model struct {
 	screens  []screens.Screen
 	active   screens.ID
 	showHelp bool
-	width    int
-	height   int
-	now      time.Time
+	// palette is the command palette overlay; a field (not a pointer)
+	// because Model runs on value receivers and tests mutate fields
+	// directly.
+	palette palette.Model
+	width   int
+	height  int
+	now     time.Time
 }
 
 // New builds the root model against the live kernel interfaces.
@@ -68,6 +73,7 @@ func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 		keys:    global,
 		sidebar: sidebar.New(screens.IDs(), titles),
 		screens: list,
+		palette: palette.New(titles, theme.FromName(cfg.Theme)),
 		active:  screens.Dashboard,
 		now:     time.Now(),
 	}
@@ -114,17 +120,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// handleKey applies the input rules of ARCHITECTURE.md §6. While the help
-// overlay is open it is modal: only its close keys act and everything else
-// is swallowed. Otherwise the active screen's keymap shadows the global
-// one per key: sort, filter and signal bindings are claimed before any
-// global action can fire.
+// handleKey applies the input rules of ARCHITECTURE.md §6. While the
+// help overlay or the command palette is open, it is modal: only the
+// overlay's keys act and everything else is swallowed. Otherwise the
+// active screen's keymap shadows the global one per key: sort, filter
+// and signal bindings are claimed before any global action can fire.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		if key.Matches(msg, m.keys.Help, m.keys.Back) {
 			m.showHelp = false
 		}
 		return m, nil
+	}
+	if m.palette.Open() {
+		return m.handlePaletteKey(msg)
 	}
 
 	updated, cmd, handled := m.screens[m.active].UpdateKey(msg)
@@ -136,6 +145,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
+	case key.Matches(msg, m.keys.Palette):
+		m.palette.Show()
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = true
 	case key.Matches(msg, m.keys.NextScreen):
@@ -158,14 +169,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handlePaletteKey routes a keypress through the open palette, the same
+// modal-first claiming the help overlay applies: the palette key
+// toggles it closed, esc closes it, enter jumps to the highlighted
+// module via setActive, and every other key is claimed by the palette
+// itself (filter text or swallowed). Data messages keep flowing to the
+// active screen underneath; the palette only claims keys and the
+// render.
+func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Palette) {
+		m.palette.Hide()
+		return m, nil
+	}
+
+	action, cmd := m.palette.UpdateKey(msg)
+	switch action {
+	case palette.ActionClose:
+		m.palette.Hide()
+	case palette.ActionSelect:
+		index, ok := m.palette.SelectedIndex()
+		if !ok {
+			return m, cmd
+		}
+		m.palette.Hide()
+		updated, jumpCmd := m.setActive(screens.IDs()[index])
+		return updated, jumpCmd
+	}
+	return m, cmd
+}
+
 // handleMouse offers every press to the active screen first: a screen
 // with an open confirmation modal is exclusive and swallows the event
 // before the shell acts (ARCHITECTURE.md §7). Unclaimed presses fall
 // through to the sidebar hit-test: the sidebar column starts below the
-// one-row header, so screen row y maps to sidebar row y-1. The keyboard
-// stays inert while the help overlay is open.
+// one-row header, so screen row y maps to sidebar row y-1. Mouse input
+// stays inert while the help overlay or the palette is open; both
+// overlays are keyboard-only.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.showHelp {
+	if m.showHelp || m.palette.Open() {
 		return m, nil
 	}
 
@@ -203,8 +244,9 @@ func (m Model) setActive(id screens.ID) (Model, tea.Cmd) {
 	return m, m.screens[m.active].Init()
 }
 
-// View renders the shell: header bar, sidebar plus active screen (or the
-// help overlay), and the footer hint bar.
+// View renders the shell: header bar, sidebar plus active screen (or
+// an overlay: the help listing or the command palette), and the footer
+// hint bar.
 func (m Model) View() string {
 	if m.width < minWidth || m.height < minHeight {
 		return fmt.Sprintf("terminal too small: need at least %dx%d, got %dx%d",
@@ -214,10 +256,13 @@ func (m Model) View() string {
 	contentHeight := m.height - 2 // One header row and one footer row.
 
 	var body string
-	if m.showHelp {
+	switch {
+	case m.showHelp:
 		body = help.Overlay(m.keys.Bindings(), m.screens[m.active].Hints(),
 			m.theme, m.width, contentHeight)
-	} else {
+	case m.palette.Open():
+		body = m.palette.View(m.width, contentHeight)
+	default:
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			m.sidebar.View(m.theme, contentHeight),
 			m.screens[m.active].View(m.contentWidth(), contentHeight),
