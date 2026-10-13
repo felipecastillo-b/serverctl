@@ -61,7 +61,7 @@ func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 	global := keys.DefaultGlobal()
 	_ = global.ApplyOverrides(cfg.Keys)
 
-	list := screens.All(theme.FromName(cfg.Theme), sys)
+	list := screens.All(theme.FromName(cfg.Theme), sys, cadences(cfg))
 	titles := make([]string, len(list))
 	for i, s := range list {
 		titles[i] = s.Title()
@@ -76,6 +76,26 @@ func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 		palette: palette.New(titles, theme.FromName(cfg.Theme)),
 		active:  screens.Dashboard,
 		now:     time.Now(),
+	}
+}
+
+// cadences resolves the configured per-chain intervals into the
+// screens package's duration shape: config owns the YAML keys and
+// seconds, screens own the durations, and this is the only place the
+// two meet. Config.Load fills every key (defaults merged per key), so
+// every chain resolves; a hand-built Config with no intervals reads
+// zero, which the screen constructors replace with the built-in
+// defaults.
+func cadences(cfg config.Config) screens.Cadences {
+	return screens.Cadences{
+		Services:          cfg.Cadence(config.IntervalServices),
+		Logs:              cfg.Cadence(config.IntervalLogs),
+		Storage:           cfg.Cadence(config.IntervalStorage),
+		NetworkInterfaces: cfg.Cadence(config.IntervalNetworkInterfaces),
+		NetworkSockets:    cfg.Cadence(config.IntervalNetworkSockets),
+		Packages:          cfg.Cadence(config.IntervalPackages),
+		UsersSessions:     cfg.Cadence(config.IntervalUsersSessions),
+		UsersAttempts:     cfg.Cadence(config.IntervalUsersAttempts),
 	}
 }
 

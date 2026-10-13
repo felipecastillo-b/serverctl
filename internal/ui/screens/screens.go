@@ -19,6 +19,44 @@ import (
 // screens, and the message contract must not create an import cycle.
 type RefreshMsg time.Time
 
+// Cadences carries the refresh intervals of the eight self-ticked
+// collection chains of ARCHITECTURE.md §3 from the config layer to
+// the screen constructors. All() is the injection point: the app
+// resolves the configured intervals into this struct so the screens
+// package stays self-contained — it knows durations, never YAML
+// keys. The shell-wide RefreshMsg screens (dashboard, processes) are
+// not here: they ride the config's refresh_seconds, not intervals.
+//
+// A zero field means "use the built-in default for that chain", which
+// the constructors apply, so a partially wired Cadences can never
+// stall a screen on a zero tick.
+type Cadences struct {
+	Services          time.Duration
+	Logs              time.Duration
+	Storage           time.Duration
+	NetworkInterfaces time.Duration
+	NetworkSockets    time.Duration
+	Packages          time.Duration
+	UsersSessions     time.Duration
+	UsersAttempts     time.Duration
+}
+
+// DefaultCadences returns the built-in per-chain intervals, the §3
+// cadences the screens shipped with before they became configurable:
+// one constant per chain.
+func DefaultCadences() Cadences {
+	return Cadences{
+		Services:          defaultServicesInterval,
+		Logs:              defaultLogsInterval,
+		Storage:           defaultStorageInterval,
+		NetworkInterfaces: defaultNetInterval,
+		NetworkSockets:    defaultSocksInterval,
+		Packages:          defaultPackagesInterval,
+		UsersSessions:     defaultSessionsInterval,
+		UsersAttempts:     defaultAttemptsInterval,
+	}
+}
+
 // SignalSender is the mutating surface a screen may call, satisfied by
 // actions.Actor. Tests inject fakes so screen state machines can be
 // exercised without touching real processes (ARCHITECTURE.md §4: actions
@@ -70,13 +108,18 @@ type Screen interface {
 }
 
 // All returns one screen per module, in sidebar order, wired to the
-// live collectors.System: the dashboard (system overview), processes,
-// services (systemd units), logs (journal tail), storage (mounts and
-// disks), network (interfaces and sockets), packages (installed
-// count) and users (login sessions and SSH attempts). A module whose
-// milestone has not landed yet would keep its catalog stub; with m6b
-// all eight are live.
-func All(th theme.Theme, sys collectors.System) []Screen {
+// live collectors.System and the given cadences: the dashboard
+// (system overview), processes, services (systemd units), logs
+// (journal tail), storage (mounts and disks), network (interfaces
+// and sockets), packages (installed count) and users (login sessions
+// and SSH attempts). A module whose milestone has not landed yet
+// would keep its catalog stub; with m6b all eight are live.
+//
+// All() is the intervals injection point of ARCHITECTURE.md §3: the
+// app resolves the config's `intervals` section into cad, and each
+// constructor receives its own chain's cadence (Network and Access
+// receive both of theirs).
+func All(th theme.Theme, sys collectors.System, cad Cadences) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
 		switch s.id {
@@ -87,30 +130,32 @@ func All(th theme.Theme, sys collectors.System) []Screen {
 		case Services:
 			// collectors.System implements core.UnitLister over D-Bus
 			// and actions.Actor implements core.UnitManager (m4a).
-			out[i] = NewServices(sys, th, actions.Actor{})
+			out[i] = NewServices(sys, th, actions.Actor{}, cad.Services)
 		case Logs:
 			// collectors.System implements core.JournalReader over
 			// sdjournal (m4c).
-			out[i] = NewLogs(sys, th)
+			out[i] = NewLogs(sys, th, cad.Logs)
 		case Storage:
 			// collectors.System implements core.StorageLister over
 			// /proc/mounts, statfs and /proc/diskstats (m5a).
-			out[i] = NewStorage(sys, th)
+			out[i] = NewStorage(sys, th, cad.Storage)
 		case Network:
 			// collectors.System implements core.NetLister over
 			// /proc/net/dev + netlink and core.SocketLister over
-			// /proc/net/{tcp,tcp6,udp,udp6} (m5b).
-			out[i] = NewNetwork(sys, sys, th)
+			// /proc/net/{tcp,tcp6,udp,udp6} (m5b). Both chain
+			// intervals: interfaces and sockets.
+			out[i] = NewNetwork(sys, sys, th, cad.NetworkInterfaces, cad.NetworkSockets)
 		case Packages:
 			// collectors.System implements core.PackageCounter over
 			// the pacman local database with a `pacman -Qq` fixed-argv
 			// fallback (m6a).
-			out[i] = NewPackages(sys, th)
+			out[i] = NewPackages(sys, th, cad.Packages)
 		case Users:
 			// collectors.System implements core.SessionLister over
 			// the utmp file and core.SSHAttemptLister over the sshd
-			// unit's journal (m6b).
-			out[i] = NewAccess(sys, sys, th)
+			// unit's journal (m6b). Both chain intervals: sessions
+			// and attempts.
+			out[i] = NewAccess(sys, sys, th, cad.UsersSessions, cad.UsersAttempts)
 		default:
 			out[i] = s
 		}

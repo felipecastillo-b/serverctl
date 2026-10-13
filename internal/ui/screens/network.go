@@ -24,10 +24,12 @@ import (
 // window stays tight — and sockets at 5 s, deliberately slower — a
 // port table barely churns and every round walks /proc/<pid>/fd for
 // the listener PIDs. Two chains, one screen: each re-arms itself and
-// dies independently while the screen is inactive.
+// dies independently while the screen is inactive. Both are the
+// built-in defaults the config `intervals.network.interfaces` and
+// `intervals.network.sockets` overrides replace.
 const (
-	netInterval   = 2 * time.Second
-	socksInterval = 5 * time.Second
+	defaultNetInterval   = 2 * time.Second
+	defaultSocksInterval = 5 * time.Second
 )
 
 // netTickMsg re-arms one interfaces round of the 2 s chain.
@@ -128,6 +130,16 @@ type network struct {
 	theme   theme.Theme
 	tracker collectors.NetTracker
 
+	// The two chain intervals, one per self-armed cadence; the three
+	// per-listing lastGood instants are the keeps-last-good
+	// bookkeeping of §5: a failed half keeps its listing standing and
+	// the status line ages it.
+	ifaceInterval     time.Duration
+	sockInterval      time.Duration
+	netLastGood       time.Time
+	listenersLastGood time.Time
+	connsLastGood     time.Time
+
 	interfaces []core.NetworkInterface // last collected round, rates filled by tracker
 	listeners  []core.ListenPort
 	conns      []core.Connection
@@ -160,15 +172,23 @@ type network struct {
 
 // NewNetwork builds the network screen listing interfaces through net
 // and sockets through socks, rendering with th. All() passes the live
-// collectors.System for both ports; tests inject fakes
-// (ARCHITECTURE.md §2: the UI consumes ports).
-func NewNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme) Screen {
-	return newNetwork(net, socks, th)
+// collectors.System for both ports and both chain intervals; tests
+// inject fakes (ARCHITECTURE.md §2: the UI consumes ports). A
+// non-positive interval falls back to that chain's built-in §3
+// default.
+func NewNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifaceInterval, sockInterval time.Duration) Screen {
+	return newNetwork(net, socks, th, ifaceInterval, sockInterval)
 }
 
 // newNetwork is the concrete constructor; tests use it for white-box
 // state assertions.
-func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme) *network {
+func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifaceInterval, sockInterval time.Duration) *network {
+	if ifaceInterval <= 0 {
+		ifaceInterval = defaultNetInterval
+	}
+	if sockInterval <= 0 {
+		sockInterval = defaultSocksInterval
+	}
 	filter := textinput.New()
 	filter.Prompt = "/"
 	filter.CharLimit = 64
@@ -197,8 +217,10 @@ func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme) *ne
 		ifaceSort: ifaceSortName,
 		// The connections ladder reads best ascending: live
 		// conversations at the top, the TIME_WAIT backlog last.
-		connSort:  connSortState,
-		lastWidth: -1,
+		connSort:      connSortState,
+		lastWidth:     -1,
+		ifaceInterval: ifaceInterval,
+		sockInterval:  sockInterval,
 	}
 }
 
@@ -277,21 +299,23 @@ func (s *network) Init() tea.Cmd {
 	return tea.Batch(s.collectNet(), s.collectSocks(), s.tickNet(), s.tickSock())
 }
 
-// tickNet schedules the next self-armed 2 s tick. The chain dies
-// naturally while the screen is inactive — the router delivers
-// netTickMsg to the ACTIVE screen only, so nobody re-arms it — and
-// Init restarts it on re-entry (the §5 cancellable-on-switch story,
-// same as the services and logs screens). sockTick below is its own
-// chain: each cadence dies and revives independently of the other.
+// tickNet schedules the next self-armed tick of the interfaces chain
+// on its configured cadence. The chain dies naturally while the screen
+// is inactive — the router delivers netTickMsg to the ACTIVE screen
+// only, so nobody re-arms it — and Init restarts it on re-entry (the
+// §5 cancellable-on-switch story, same as the services and logs
+// screens). tickSock below is its own chain: each cadence dies and
+// revives independently of the other.
 func (s *network) tickNet() tea.Cmd {
-	return tea.Tick(netInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.ifaceInterval, func(time.Time) tea.Msg {
 		return netTickMsg{}
 	})
 }
 
-// tickSock schedules the next self-armed 5 s tick of the sockets chain.
+// tickSock schedules the next self-armed tick of the sockets chain on
+// its configured cadence.
 func (s *network) tickSock() tea.Cmd {
-	return tea.Tick(socksInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.sockInterval, func(time.Time) tea.Msg {
 		return sockTickMsg{}
 	})
 }
@@ -320,6 +344,7 @@ func (s *network) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			s.interfaces = s.tracker.Refresh(msg.ifaces, elapsed)
 			s.lastNet = msg.at
 			s.netLoaded = true
+			s.netLastGood = time.Now()
 		}
 		s.reapply()
 	case sockDataMsg:
@@ -328,10 +353,12 @@ func (s *network) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		if msg.listenErr == nil {
 			s.listeners = msg.listeners
 			s.listenersLoaded = true
+			s.listenersLastGood = time.Now()
 		}
 		if msg.connErr == nil {
 			s.conns = msg.connections
 			s.connsLoaded = true
+			s.connsLastGood = time.Now()
 		}
 		s.reapply()
 	}
@@ -921,35 +948,38 @@ func (s *network) rowsFor(width int) []table.Row {
 }
 
 // statusLine composes the one-line footer: the ACTIVE view's
-// collection error first, its collecting state until the first round
-// lands, else the view's listing summary with sort direction and the
-// active filter. Each view reads its own half's state — a failed
-// interfaces round never blanks the ports listing.
+// collection error first — with the muted age of that half's listing
+// still on screen while it stays (§5's keeps-last-good state) — its
+// muted collecting state until the first round lands, else the view's
+// listing summary with sort direction and the active filter. Each view
+// reads its own half's state — a failed interfaces round never blanks
+// the ports listing.
 func (s *network) statusLine(muted, danger lipgloss.Style) string {
 	var err error
 	var loaded bool
+	var lastGood time.Time
 	var summary string
 	switch s.view {
 	case netPorts:
-		err, loaded = s.listenErr, s.listenersLoaded
+		err, loaded, lastGood = s.listenErr, s.listenersLoaded, s.listenersLastGood
 		summary = fmt.Sprintf("%d ports · sort port %s", len(s.portView), sortArrow(s.portDesc))
 	case netConnections:
-		err, loaded = s.connErr, s.connsLoaded
+		err, loaded, lastGood = s.connErr, s.connsLoaded, s.connsLastGood
 		summary = fmt.Sprintf("%d connections · sort %s %s", len(s.connView), s.connSort, sortArrow(s.connDesc))
 	default:
-		err, loaded = s.netErr, s.netLoaded
+		err, loaded, lastGood = s.netErr, s.netLoaded, s.netLastGood
 		summary = fmt.Sprintf("%d interfaces · sort %s %s", len(s.ifaceView), s.ifaceSort, sortArrow(s.ifaceDesc))
 	}
 
 	if err != nil {
-		return danger.Render(fmt.Sprintf("n/a (%v)", err))
+		return errStatus(err, lastGood, muted, danger)
 	}
 	if !loaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
-	parts := []string{summary}
+	parts := []string{muted.Render(summary)}
 	if q := strings.TrimSpace(s.filter.Value()); q != "" {
-		parts = append(parts, fmt.Sprintf("filter %q", q))
+		parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
 	}
-	return muted.Render(strings.Join(parts, " · "))
+	return strings.Join(parts, " · ")
 }

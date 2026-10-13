@@ -256,7 +256,9 @@ func TestPackagesScreenBootsAndRenders(t *testing.T) {
 
 	cfg := config.Default()
 	m := New(cfg)
-	m.screens[screens.Packages] = screens.NewPackages(fakePackageCounter{}, theme.FromName(cfg.Theme))
+	// 0 = the built-in default cadence: this smoke swaps the screen to
+	// prove rendering, not the interval wiring (which has its own tests).
+	m.screens[screens.Packages] = screens.NewPackages(fakePackageCounter{}, theme.FromName(cfg.Theme), 0)
 
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 30))
 
@@ -304,8 +306,9 @@ func newUsersTestModel(t *testing.T) *teatest.TestModel {
 	t.Helper()
 	cfg := config.Default()
 	m := New(cfg)
+	// 0 = the built-in default cadences (see the packages smoke above).
 	m.screens[screens.Users] = screens.NewAccess(fakeSessionLister{}, fakeSSHAttemptLister{},
-		theme.FromName(cfg.Theme))
+		theme.FromName(cfg.Theme), 0, 0)
 	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 30))
 }
 

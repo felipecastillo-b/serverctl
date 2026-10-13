@@ -99,7 +99,7 @@ func genEntries(n int, prefix string, startIndex int) []core.JournalEntry {
 // tea.Batch-laziness discovery, at the Logs cadence).
 func newLogsScreen(t *testing.T, reader core.JournalReader) *logs {
 	t.Helper()
-	s := newLogs(reader, theme.Dark())
+	s := newLogs(reader, theme.Dark(), defaultLogsInterval)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must tail and start the cadence")
@@ -310,13 +310,13 @@ func TestLogsFilter(t *testing.T) {
 
 func TestLogsStatusStates(t *testing.T) {
 	// Before the first round lands: collecting.
-	fresh := newLogs(&fakeJournal{}, theme.Dark())
+	fresh := newLogs(&fakeJournal{}, theme.Dark(), defaultLogsInterval)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("unloaded screen must say collecting...:\n%s", out)
 	}
 
 	// A failed round shows the error.
-	failing := newLogs(&fakeJournal{tailErr: errors.New("no journal")}, theme.Dark())
+	failing := newLogs(&fakeJournal{tailErr: errors.New("no journal")}, theme.Dark(), defaultLogsInterval)
 	updated, _ := failing.Update(failing.tail()())
 	failing = updated.(*logs)
 	if out := failing.View(100, 24); !strings.Contains(out, "n/a (no journal)") {
@@ -461,5 +461,28 @@ func TestLogsHints(t *testing.T) {
 	}
 	if len(s.Hints()) != len(want) {
 		t.Errorf("Hints = %d bindings, want %d", len(s.Hints()), len(want))
+	}
+}
+
+// TestLogsFailedRoundCarriesNoStaleAge pins the stale-age exemption
+// for this screen: the buffer is a tail of historical entries that
+// carry their own timestamps in every line, so a failed follow round
+// surfaces the error alone — aging historical entries would
+// misdescribe them (the struct comment documents the call).
+func TestLogsFailedRoundCarriesNoStaleAge(t *testing.T) {
+	s := newLogsScreen(t, &fakeJournal{tail: logFixture, tailCursor: "c3"})
+
+	updated, _ := s.Update(entriesMsg{err: errors.New("journal closed")})
+	s = updated.(*logs)
+	out := s.View(100, 24)
+	if !strings.Contains(out, "n/a (journal closed)") {
+		t.Errorf("the failed follow round must surface its error:\n%s", out)
+	}
+	if strings.Contains(out, "stale") {
+		t.Errorf("historical entries carry their own timestamps; no stale-age fragment belongs here:\n%s", out)
+	}
+	// The buffered entries stay visible under the error.
+	if !strings.Contains(out, "sshd.service") {
+		t.Errorf("the collected buffer must keep rendering under the error:\n%s", out)
 	}
 }

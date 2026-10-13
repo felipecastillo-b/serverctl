@@ -14,13 +14,14 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
 
-// packagesInterval is the Packages refresh cadence: 30 s, the slowest
-// module tick — installed counts change only when the administrator
-// runs a package transaction, which is ARCHITECTURE.md §3's
-// on-demand territory, and the m6 doc settles it on the storage-style
-// 30 s self-tick so the count visibly refreshes instead of living
-// forever.
-const packagesInterval = 30 * time.Second
+// defaultPackagesInterval is the Packages refresh cadence: 30 s, the
+// slowest module tick — installed counts change only when the
+// administrator runs a package transaction, which is ARCHITECTURE.md
+// §3's on-demand territory, and the m6 doc settles it on the
+// storage-style 30 s self-tick so the count visibly refreshes instead
+// of living forever. It is the built-in default the config
+// `intervals.packages` override replaces.
+const defaultPackagesInterval = 30 * time.Second
 
 // packagesTickMsg re-arms one round of the screen's own cadence.
 type packagesTickMsg struct{}
@@ -44,36 +45,49 @@ type packages struct {
 	counter core.PackageCounter
 	theme   theme.Theme
 
+	// interval is the screen's own refresh cadence; lastGood is the
+	// instant of its last successful round, the keeps-last-good
+	// bookkeeping of §5.
+	interval time.Duration
+	lastGood time.Time
+
 	count  core.PackageCount // last good round
 	loaded bool
 	err    error // error of the last round; the last good count stays (§5)
 }
 
 // NewPackages builds the Packages screen counting through counter and
-// rendering with th. All() passes the live collectors.System; tests
-// inject fakes (ARCHITECTURE.md §2: the UI consumes ports).
-func NewPackages(counter core.PackageCounter, th theme.Theme) Screen {
-	return newPackages(counter, th)
+// rendering with th. All() passes the live collectors.System and the
+// resolved packages cadence; tests inject fakes (ARCHITECTURE.md §2:
+// the UI consumes ports). A non-positive interval falls back to the
+// built-in §3 default.
+func NewPackages(counter core.PackageCounter, th theme.Theme, interval time.Duration) Screen {
+	return newPackages(counter, th, interval)
 }
 
 // newPackages is the concrete constructor; tests use it for white-box
 // state assertions.
-func newPackages(counter core.PackageCounter, th theme.Theme) *packages {
-	return &packages{counter: counter, theme: th}
+func newPackages(counter core.PackageCounter, th theme.Theme, interval time.Duration) *packages {
+	if interval <= 0 {
+		interval = defaultPackagesInterval
+	}
+	return &packages{counter: counter, theme: th, interval: interval}
 }
 
 // Init collects the first round immediately and starts the screen's
-// own 30 s cadence, the storage chain shape: the tick dies naturally
-// while the screen is inactive — the router delivers packagesTickMsg
-// to the ACTIVE screen only, so nobody re-arms it — and Init restarts
-// it on re-entry (the §5 cancellable-on-switch story).
+// own cadence at the configured interval, the storage chain shape:
+// the tick dies naturally while the screen is inactive — the router
+// delivers packagesTickMsg to the ACTIVE screen only, so nobody
+// re-arms it — and Init restarts it on re-entry (the §5
+// cancellable-on-switch story).
 func (s *packages) Init() tea.Cmd {
 	return tea.Batch(s.collect(), s.tick())
 }
 
-// tick schedules the next self-armed packages tick.
+// tick schedules the next self-armed packages tick on the configured
+// cadence.
 func (s *packages) tick() tea.Cmd {
-	return tea.Tick(packagesInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.interval, func(time.Time) tea.Msg {
 		return packagesTickMsg{}
 	})
 }
@@ -91,6 +105,7 @@ func (s *packages) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		if msg.err == nil {
 			s.count = msg.count
 			s.loaded = true
+			s.lastGood = time.Now()
 		}
 	}
 	return s, nil
@@ -160,15 +175,17 @@ func (s *packages) View(width, height int) string {
 }
 
 // statusLine composes the one-line footer: the last round's error
-// first, the collecting state until the first round lands, else the
-// listing summary — the count with the manager and distro that
-// produced it, the storage footer's shape.
+// first — with the muted age of the summary still on screen while it
+// stays (§5's keeps-last-good state) — the muted collecting state
+// until the first round lands, else the listing summary — the count
+// with the manager and distro that produced it, the storage footer's
+// shape.
 func (s *packages) statusLine(muted, danger lipgloss.Style) string {
 	if s.err != nil {
-		return danger.Render(fmt.Sprintf("n/a (%v)", s.err))
+		return errStatus(s.err, s.lastGood, muted, danger)
 	}
 	if !s.loaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
 	summary := fmt.Sprintf("%d packages · %s", s.count.Installed, s.count.Manager)
 	if s.count.Distro != "" {

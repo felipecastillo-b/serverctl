@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -91,7 +92,7 @@ var dockerOnDisk = core.Service{
 // runtime territory, driving it here would stall the test.
 func newServicesScreen(t *testing.T, lister core.UnitLister, manager core.UnitManager) *services {
 	t.Helper()
-	s := newServices(lister, theme.Dark(), manager)
+	s := newServices(lister, theme.Dark(), manager, defaultServicesInterval)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must collect and start the cadence")
@@ -526,7 +527,7 @@ func TestServicesTickRearmsOwnCadence(t *testing.T) {
 }
 
 func TestServicesListerErrorShowsNA(t *testing.T) {
-	s := newServices(&fakeLister{err: errors.New("no system bus")}, theme.Dark(), &fakeManager{})
+	s := newServices(&fakeLister{err: errors.New("no system bus")}, theme.Dark(), &fakeManager{}, defaultServicesInterval)
 	updated, _ := s.Update(s.collect()())
 	s = updated.(*services)
 	if s.collectErr == nil || s.loaded {
@@ -645,5 +646,51 @@ func TestNeedsPrivileges(t *testing.T) {
 				t.Errorf("needsPrivileges(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestServicesFailedCountCallout pins the attention callout of the
+// healthy summary: the failed units render as their own part of the
+// status line (in the danger role, m7b) while the rest of the line
+// stays muted.
+func TestServicesFailedCountCallout(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+	out := s.View(100, 24)
+	if !strings.Contains(out, "1 failed") {
+		t.Errorf("the failed unit must be called out:\n%s", out)
+	}
+	healthy := slices.Clone(unitFixture)
+	healthy[0].Active = "active"
+	updated, _ := s.Update(unitsDataMsg{services: healthy})
+	s = updated.(*services)
+	if out := s.View(100, 24); strings.Contains(out, "failed") {
+		t.Errorf("a healthy listing must not render a failed callout:\n%s", out)
+	}
+}
+
+// TestServicesStaleRoundAgesListing pins the §5 keeps-last-good
+// state: a failed round keeps the last good listing standing while
+// the status line carries the error plus the muted age of that
+// listing, and the next good round clears both.
+func TestServicesStaleRoundAgesListing(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+
+	// The next round dies; the first round's listing stays on screen.
+	updated, _ := s.Update(unitsDataMsg{err: errors.New("dbus went away")})
+	s = updated.(*services)
+	s.lastGood = time.Now().Add(-45 * time.Second)
+	out := s.View(100, 24)
+	for _, want := range []string{"n/a (dbus went away)", "stale 45s", "sshd.service"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stale round must keep the error, the age and the listing, missing %q:\n%s", want, out)
+		}
+	}
+
+	// Recovery: a good round clears the error and the stale fragment.
+	updated, _ = s.Update(unitsDataMsg{services: unitFixture})
+	s = updated.(*services)
+	out = s.View(100, 24)
+	if strings.Contains(out, "stale") || strings.Contains(out, "dbus went away") {
+		t.Errorf("a recovered round must clear the error and the age:\n%s", out)
 	}
 }

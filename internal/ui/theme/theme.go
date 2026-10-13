@@ -51,8 +51,13 @@ func Light() Theme {
 		Success:    lipgloss.Color("#059669"),
 		Warning:    lipgloss.Color("#b45309"),
 		Danger:     lipgloss.Color("#dc2626"),
-		Muted:      lipgloss.Color("#64748b"),
-		Border:     lipgloss.Color("#cbd5e1"),
+		// Muted is slate-600, one step darker than the dark palette's
+		// slate-500: the previously shared #64748b sat at a borderline
+		// 4.55:1 on this background, while #475569 reads at 7.24:1 —
+		// comfortable AA for the secondary text and bar remainders
+		// this role carries.
+		Muted:  lipgloss.Color("#475569"),
+		Border: lipgloss.Color("#cbd5e1"),
 	}
 }
 

@@ -51,18 +51,20 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 
 | Module | Data source | Refresh cadence |
 |--------|-------------|-----------------|
-| Dashboard / overview | Aggregated CPU, memory, load, uptime, kernel, hardware | 2 s |
-| Processes | `/proc/<pid>/` | 2 s |
-| Services | systemd D-Bus API (`ListUnits`) | 5 s + manual refresh |
-| Logs | journal via `sdjournal` | follow, ~1 s |
-| Storage | `/proc/mounts`, `statfs`, `/proc/diskstats` | 30 s |
-| Network | `/proc/net/dev`, sysfs | 2 s |
-| Ports / connections | `/proc/net/{tcp,tcp6,udp,udp6,unix}` | 5 s |
-| Packages | pacman local database (installed count; other distros post-MVP) | on demand |
-| Users / sessions | utmp, logind D-Bus | 10 s |
-| SSH audit | `/var/log/wtmp`, journal of `sshd` | 30 s |
-| Sensors | `/sys/class/hwmon` | 3 s |
-| System info | `/proc/cpuinfo`, `uname`, DMI sysfs | once at startup |
+| Dashboard / overview | Aggregated CPU, memory, load, uptime, kernel, hardware | 2 s default (config `refresh_seconds`) |
+| Processes | `/proc/<pid>/` | 2 s default (config `refresh_seconds`) |
+| Services | systemd D-Bus API (`ListUnits`) | 5 s default (config `intervals.services`) |
+| Logs | journal via `sdjournal` | follow, 1 s default (config `intervals.logs`) |
+| Storage | `/proc/mounts`, `statfs`, `/proc/diskstats` | 30 s default (config `intervals.storage`) |
+| Network | `/proc/net/dev`, sysfs | 2 s default (config `intervals.network.interfaces`) |
+| Ports / connections | `/proc/net/{tcp,tcp6,udp,udp6,unix}` | 5 s default (config `intervals.network.sockets`) |
+| Packages | pacman local database (installed count; other distros post-MVP) | 30 s self-tick (config `intervals.packages`) |
+| Users / sessions | utmp, logind D-Bus | 10 s default (config `intervals.users.sessions`) |
+| SSH audit | `/var/log/wtmp`, journal of `sshd` | 30 s default (config `intervals.users.attempts`) |
+| Sensors | `/sys/class/hwmon` | each dashboard round (`refresh_seconds`) |
+| System info | `/proc/cpuinfo`, `uname`, DMI sysfs | each dashboard round (`refresh_seconds`) |
+
+Dashboard and Processes ride the shell-wide `refresh_seconds` ticker; every other chain is self-ticked with its own default, and the config file's `intervals` section overrides any of them (per-key merge in seconds, minimum 1).
 
 ## 4. Data models
 
@@ -152,7 +154,7 @@ type SSHAttempt struct {
 - The whole UI is one Bubble Tea root model; everything asynchronous arrives as a typed `tea.Msg`.
 - Each module collects via a `tea.Cmd` with a per-module ticker (configurable interval); collection is async and cancellable on screen switch or quit — the UI never blocks on I/O.
 - Results arrive as typed messages (e.g., `ProcessesUpdatedMsg`, `ActionResultMsg`) routed by the root model to the owning screen.
-- Panels render explicit loading / error / stale states; a failed collection degrades one panel, never the program.
+- Panels render explicit loading, error and stale states: the muted loading state covers a first round, and a failed round keeps the last good data on screen while the panel's status note carries the round error plus the age of that data (`stale 45s`), clearing both on the next good round; a failed collection degrades one panel, never the program.
 
 ## 6. Navigation & input
 

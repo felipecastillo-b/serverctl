@@ -21,10 +21,12 @@ import (
 // round re-walks a bounded sshd journal window, which is not a 10 s
 // job. Two chains, one screen: each re-arms itself and dies
 // independently while the screen is inactive (the network screen's
-// two-cadence shape).
+// two-cadence shape). Both are the built-in defaults the config
+// `intervals.users.sessions` and `intervals.users.attempts` overrides
+// replace.
 const (
-	sessionsInterval = 10 * time.Second
-	attemptsInterval = 30 * time.Second
+	defaultSessionsInterval = 10 * time.Second
+	defaultAttemptsInterval = 30 * time.Second
 )
 
 // sessionsTickMsg re-arms one round of the 10 s chain.
@@ -78,6 +80,15 @@ type access struct {
 	attempts core.SSHAttemptLister
 	theme    theme.Theme
 
+	// The two chain intervals, one per self-armed cadence; the
+	// per-half lastGood instants are the keeps-last-good bookkeeping
+	// of §5: a failed half keeps its listing standing and the status
+	// line ages it.
+	sessionsInterval time.Duration
+	attemptsInterval time.Duration
+	sessionsLastGood time.Time
+	attemptsLastGood time.Time
+
 	view accessView // which listing the table renders
 
 	sessionsList []core.UserSession // last good sessions round
@@ -93,15 +104,23 @@ type access struct {
 
 // NewAccess builds the Users screen listing sessions through
 // sessions and SSH attempts through attempts, rendering with th.
-// All() passes the live collectors.System for both ports; tests
-// inject fakes (ARCHITECTURE.md §2: the UI consumes ports).
-func NewAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme) Screen {
-	return newAccess(sessions, attempts, th)
+// All() passes the live collectors.System for both ports and both
+// chain intervals; tests inject fakes (ARCHITECTURE.md §2: the UI
+// consumes ports). A non-positive interval falls back to that chain's
+// built-in §3 default.
+func NewAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme, sessionsInterval, attemptsInterval time.Duration) Screen {
+	return newAccess(sessions, attempts, th, sessionsInterval, attemptsInterval)
 }
 
 // newAccess is the concrete constructor; tests use it for white-box
 // state assertions.
-func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme) *access {
+func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme, sessionsInterval, attemptsInterval time.Duration) *access {
+	if sessionsInterval <= 0 {
+		sessionsInterval = defaultSessionsInterval
+	}
+	if attemptsInterval <= 0 {
+		attemptsInterval = defaultAttemptsInterval
+	}
 	tbl := table.New(
 		table.WithColumns(sessionsColumnsFor(80)),
 		table.WithFocused(true),
@@ -114,11 +133,13 @@ func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th t
 	)
 
 	return &access{
-		sessions:  sessions,
-		attempts:  attempts,
-		theme:     th,
-		table:     tbl,
-		lastWidth: -1,
+		sessions:         sessions,
+		attempts:         attempts,
+		theme:            th,
+		table:            tbl,
+		lastWidth:        -1,
+		sessionsInterval: sessionsInterval,
+		attemptsInterval: attemptsInterval,
 	}
 }
 
@@ -169,22 +190,23 @@ func (s *access) Init() tea.Cmd {
 	return tea.Batch(s.collectSessions(), s.collectAttempts(), s.tickSessions(), s.tickAttempts())
 }
 
-// tickSessions schedules the next self-armed 10 s tick. The chain
-// dies naturally while the screen is inactive — the router delivers
-// sessionsTickMsg to the ACTIVE screen only, so nobody re-arms it —
-// and Init restarts it on re-entry (§5's cancellable-on-switch
-// story). tickAttempts below is its own chain: each cadence dies and
-// revives independently of the other.
+// tickSessions schedules the next self-armed tick of the sessions
+// chain on its configured cadence. The chain dies naturally while the
+// screen is inactive — the router delivers sessionsTickMsg to the
+// ACTIVE screen only, so nobody re-arms it — and Init restarts it on
+// re-entry (§5's cancellable-on-switch story). tickAttempts below is
+// its own chain: each cadence dies and revives independently of the
+// other.
 func (s *access) tickSessions() tea.Cmd {
-	return tea.Tick(sessionsInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.sessionsInterval, func(time.Time) tea.Msg {
 		return sessionsTickMsg{}
 	})
 }
 
-// tickAttempts schedules the next self-armed 30 s tick of the
-// attempts chain.
+// tickAttempts schedules the next self-armed tick of the attempts
+// chain on its configured cadence.
 func (s *access) tickAttempts() tea.Cmd {
-	return tea.Tick(attemptsInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.attemptsInterval, func(time.Time) tea.Msg {
 		return attemptsTickMsg{}
 	})
 }
@@ -204,6 +226,7 @@ func (s *access) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		if msg.err == nil {
 			s.sessionsList = msg.sessions
 			s.sessionsLoaded = true
+			s.sessionsLastGood = time.Now()
 		}
 		s.reapply()
 	case attemptsDataMsg:
@@ -211,6 +234,7 @@ func (s *access) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		if msg.err == nil {
 			s.attemptsList = msg.attempts
 			s.attemptsLoaded = true
+			s.attemptsLastGood = time.Now()
 		}
 		s.reapply()
 	}
@@ -357,31 +381,42 @@ func sessionRowsFor(sessions []core.UserSession, width int) []table.Row {
 	return rows
 }
 
-// attemptRowsFor renders attempts as table rows, clipped. The
-// RESULT cell reads "ok" or "failed"; the failed count rides the
-// status line.
-func attemptRowsFor(attempts []core.SSHAttempt, width int) []table.Row {
+// attemptRowsFor renders attempts as table rows, clipped. The RESULT
+// cell reads "ok" or "failed" in the success and danger roles — an
+// audit listing's verdict is the one column whose color carries
+// meaning; the failed count rides the status line.
+func attemptRowsFor(attempts []core.SSHAttempt, width int, th theme.Theme) []table.Row {
 	cols := attemptsColumnsFor(width)
 	rows := make([]table.Row, 0, len(attempts))
 	for _, a := range attempts {
-		result := "failed"
+		verdict := "failed"
 		if a.Success {
-			result = "ok"
+			verdict = "ok"
 		}
+		result := lipgloss.NewStyle().Foreground(verdictColor(a.Success, th)).Render(verdict)
 		rows = append(rows, table.Row{
 			clip(a.Time.Format(accessTimeLayout), cols[0].Width),
 			clip(a.User, cols[1].Width),
 			clip(a.SourceIP, cols[2].Width),
-			clip(result, cols[3].Width),
+			result,
 		})
 	}
 	return rows
 }
 
+// verdictColor maps an attempt's outcome to its role: success for an
+// accepted login, danger for a failed one.
+func verdictColor(success bool, th theme.Theme) lipgloss.Color {
+	if success {
+		return th.Success
+	}
+	return th.Danger
+}
+
 // rowsFor renders the active view's rows.
 func (s *access) rowsFor(width int) []table.Row {
 	if s.view == accessAttempts {
-		return attemptRowsFor(s.attemptsList, width)
+		return attemptRowsFor(s.attemptsList, width, s.theme)
 	}
 	return sessionRowsFor(s.sessionsList, width)
 }
@@ -432,23 +467,26 @@ func (s *access) View(width, height int) string {
 }
 
 // statusLine composes the one-line footer: the ACTIVE view's
-// collection error first, its collecting state until the first round
-// lands, else the view's summary. Each view reads its own half's
-// state — a failed sessions round never blanks the attempts listing
-// (§5). A zero-attempts round appends journald's access-model hint:
-// the common cause is unprivileged visibility — a reader outside the
-// systemd-journal (or adm) group sees only their own session's
-// entries (probed live: as a wheel-only user the sshd unit match
-// returns zero entries with NO error) — and a reader with group
-// membership but a quiet sshd sees the same hint, the imprecision
-// the logs screen accepts for its empty buffer.
+// collection error first — with the muted age of that half's listing
+// still on screen while it stays (§5's keeps-last-good state) — its
+// muted collecting state until the first round lands, else the view's
+// summary. Each view reads its own half's state — a failed sessions
+// round never blanks the attempts listing (§5). A zero-attempts round
+// appends journald's access-model hint: the common cause is
+// unprivileged visibility — a reader outside the systemd-journal (or
+// adm) group sees only their own session's entries (probed live: as a
+// wheel-only user the sshd unit match returns zero entries with NO
+// error) — and a reader with group membership but a quiet sshd sees
+// the same hint, the imprecision the logs screen accepts for its empty
+// buffer. The failed count wears danger when failures exist, muted at
+// zero — the services screen's callout rule.
 func (s *access) statusLine(muted, danger lipgloss.Style) string {
 	if s.view == accessAttempts {
 		if s.attemptsErr != nil {
-			return danger.Render(fmt.Sprintf("n/a (%v)", s.attemptsErr))
+			return errStatus(s.attemptsErr, s.attemptsLastGood, muted, danger)
 		}
 		if !s.attemptsLoaded {
-			return danger.Render("collecting...")
+			return loadingStatus(muted)
 		}
 		failed := 0
 		for _, a := range s.attemptsList {
@@ -456,18 +494,27 @@ func (s *access) statusLine(muted, danger lipgloss.Style) string {
 				failed++
 			}
 		}
-		parts := []string{fmt.Sprintf("%d attempts · %d failed", len(s.attemptsList), failed)}
-		if len(s.attemptsList) == 0 {
-			parts = append(parts, "sshd journal needs systemd-journal group membership")
+		failedNote := fmt.Sprintf("%d failed", failed)
+		if failed > 0 {
+			failedNote = danger.Render(failedNote)
+		} else {
+			failedNote = muted.Render(failedNote)
 		}
-		return muted.Render(strings.Join(parts, " · "))
+		parts := []string{
+			muted.Render(fmt.Sprintf("%d attempts", len(s.attemptsList))),
+			failedNote,
+		}
+		if len(s.attemptsList) == 0 {
+			parts = append(parts, muted.Render("sshd journal needs systemd-journal group membership"))
+		}
+		return strings.Join(parts, " · ")
 	}
 
 	if s.sessionsErr != nil {
-		return danger.Render(fmt.Sprintf("n/a (%v)", s.sessionsErr))
+		return errStatus(s.sessionsErr, s.sessionsLastGood, muted, danger)
 	}
 	if !s.sessionsLoaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
 	return muted.Render(fmt.Sprintf("%d sessions · utmp", len(s.sessionsList)))
 }
