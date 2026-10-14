@@ -87,7 +87,7 @@ Then add your user to the group: `usermod -aG serverctl $USER`.
 | Document | Contents |
 |----------|----------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, modules, data sources, security model, testing strategy |
-| [ROADMAP.md](ROADMAP.md) | Milestones M0–M8, MVP and v1.0.0 cuts |
+| [ROADMAP.md](ROADMAP.md) | Milestones M0–M8, MVP and v0.1.0 cuts |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Workflow, commit conventions, quality and security gates |
 
 ## Development

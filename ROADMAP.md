@@ -1,6 +1,6 @@
 # serverctl Roadmap
 
-**Incremental delivery from empty repository to v1.0.0. Each milestone is sized to become one GitHub Issue.**
+**Incremental delivery from empty repository to v0.1.0. Each milestone is sized to become one GitHub Issue.**
 
 ## 1. How we work
 
@@ -21,15 +21,15 @@
 | M5 — Storage & network | Disks/partitions/usage, interfaces/traffic, listening ports, connections | Values match system tools (`df`, `ip`, `ss`) |
 | M6 — Packages & access | Installed package count (Arch first, counting adapter extensible to other distros), users/sessions, SSH attempts | Package count and access audit views populated |
 | M7 — UX polish | Command palette, dark/light theme refinement, configurable intervals, error surfaces | Palette covers all modules; stale/error states visible |
-| M8 — Release engineering | goreleaser pipeline, PKGBUILD/AUR, docs, v1.0.0 | v1.0.0 tagged; installable from release assets and AUR |
+| M8 — Release engineering | goreleaser pipeline, PKGBUILD/AUR, docs, v0.1.0 | v0.1.0 tagged; installable from release assets and AUR |
 
 ## 3. MVP cut
 
 **MVP = M0–M4.** Dashboard plus processes plus services/logs already delivers daily-driver value for routine server checks over SSH, with the smallest safe action surface.
 
-## 4. V1 cut
+## 4. v0.1.0 cut
 
-**V1 = M0–M8.** Every module from the product brief, plus packaging and release automation.
+**v0.1.0 = M0–M8.** Every module from the product brief, plus packaging and release automation.
 
 ## 5. Out of scope
 

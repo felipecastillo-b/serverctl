@@ -1,4 +1,4 @@
-# GoReleaser scaffold — the first real release is v1.0.0 (milestone M8, see ROADMAP.md).
+# GoReleaser scaffold — the first real release is v0.1.0 (milestone M8, see ROADMAP.md).
 version: 2
 
 project_name: serverctl
