@@ -37,7 +37,11 @@ build() {
 check() {
     cd "$pkgname-$pkgver"
 
+    # Same cache layout as build(): no module re-download at check
+    # time and nothing written to the packager's HOME.
     export CGO_ENABLED=1
+    export GOCACHE="$srcdir/gocache"
+    export GOMODCACHE="$srcdir/gomodcache"
     go test ./...
 }
 
