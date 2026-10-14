@@ -1,9 +1,11 @@
 package screens
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -281,5 +283,32 @@ func TestProcessesMouseConfirmsModal(t *testing.T) {
 	p.Update(cmd())
 	if fake.pid != 2 || fake.sig != actions.SignalKill {
 		t.Errorf("sender got pid=%d sig=%v", fake.pid, fake.sig)
+	}
+}
+
+// TestProcessesStaleRoundAgesListing pins the §5 keeps-last-good
+// state on a RefreshMsg-driven screen: a failed round keeps the last
+// good listing standing while the status line carries the error plus
+// the muted age of that listing, and the next good round clears both.
+func TestProcessesStaleRoundAgesListing(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+
+	// The next round dies; the fixture listing stays on screen.
+	updated, _ := p.Update(processesDataMsg{err: errors.New("/proc vanished")})
+	p = updated.(*processes)
+	p.lastGood = time.Now().Add(-45 * time.Second)
+	out := p.View(100, 24)
+	for _, want := range []string{"n/a (/proc vanished)", "stale 45s", "kthreadd"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stale round must keep the error, the age and the listing, missing %q:\n%s", want, out)
+		}
+	}
+
+	// Recovery: a good round clears the error and the stale fragment.
+	updated, _ = p.Update(p.collect()())
+	p = updated.(*processes)
+	out = p.View(100, 24)
+	if strings.Contains(out, "stale") || strings.Contains(out, "/proc vanished") {
+		t.Errorf("a recovered round must clear the error and the age:\n%s", out)
 	}
 }

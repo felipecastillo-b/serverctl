@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -39,7 +40,7 @@ var pkgFixture = core.PackageCount{Distro: "arch", Manager: "pacman", Installed:
 // stays runtime territory, driving it here would stall the test.
 func newPackagesScreen(t *testing.T, counter *fakePackageCounter) *packages {
 	t.Helper()
-	s := newPackages(counter, theme.Dark())
+	s := newPackages(counter, theme.Dark(), defaultPackagesInterval)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must collect and start the cadence")
@@ -98,14 +99,14 @@ func TestPackagesDistrolessSummary(t *testing.T) {
 // rows.
 func TestPackagesErrorAndCollectingStates(t *testing.T) {
 	// Before the first round: collecting.
-	fresh := newPackages(&fakePackageCounter{}, theme.Dark())
+	fresh := newPackages(&fakePackageCounter{}, theme.Dark(), defaultPackagesInterval)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh screen must show collecting..., got:\n%s", out)
 	}
 
 	// A failed first round: the error state, no body lines.
 	failed := &fakePackageCounter{err: errors.New("no pacman database")}
-	s := newPackages(failed, theme.Dark())
+	s := newPackages(failed, theme.Dark(), defaultPackagesInterval)
 	updated, _ := s.Update(s.collect()())
 	s = updated.(*packages)
 	if s.loaded {
@@ -183,5 +184,34 @@ func TestPackagesKeysFallThrough(t *testing.T) {
 	}
 	if _, _, handled := s.UpdateMouse(tea.MouseMsg{}); handled {
 		t.Error("mouse events must fall through to the shell")
+	}
+}
+
+// TestPackagesStaleRoundAgesSummary pins the §5 keeps-last-good state:
+// a failed round keeps the last good summary lines while the status
+// line carries the error plus the muted age of that summary, and the
+// next good round clears both.
+func TestPackagesStaleRoundAgesSummary(t *testing.T) {
+	s := newPackagesScreen(t, &fakePackageCounter{count: pkgFixture})
+
+	// The next round dies; the last good summary stays rendered.
+	s.counter = &fakePackageCounter{err: errors.New("db vanished")}
+	updated, _ := s.Update(s.collect()())
+	s = updated.(*packages)
+	s.lastGood = time.Now().Add(-45 * time.Second)
+	out := s.View(100, 24)
+	for _, want := range []string{"588", "n/a (db vanished)", "stale 45s"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stale round must keep the summary under the error and age, missing %q:\n%s", want, out)
+		}
+	}
+
+	// Recovery: a good round clears the error and the stale fragment.
+	s.counter = &fakePackageCounter{count: pkgFixture}
+	updated, _ = s.Update(s.collect()())
+	s = updated.(*packages)
+	out = s.View(100, 24)
+	if strings.Contains(out, "stale") || strings.Contains(out, "db vanished") {
+		t.Errorf("a recovered round must clear the error and the age:\n%s", out)
 	}
 }

@@ -84,6 +84,10 @@ type processes struct {
 	status     string
 	collectErr error
 	loaded     bool
+	// lastGood is the instant of the last successful round, the
+	// keeps-last-good bookkeeping of §5: a failed round keeps the
+	// listing standing and the status line ages it.
+	lastGood time.Time
 
 	lastWidth int
 }
@@ -175,6 +179,7 @@ func (p *processes) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			p.collectErr = nil
 			p.procs = msg.procs
 			p.loaded = true
+			p.lastGood = time.Now()
 		}
 		p.reapply()
 	case signalResultMsg:
@@ -496,25 +501,28 @@ func (p *processes) View(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// statusLine composes the one-line footer: collection errors first, else
-// the listing summary plus the last action outcome.
+// statusLine composes the one-line footer: the collection error
+// first — with the muted age of the listing still on screen while it
+// stays (§5's keeps-last-good state) — the muted collecting state
+// until the first round lands, else the listing summary plus the last
+// action outcome.
 func (p *processes) statusLine(muted, danger lipgloss.Style) string {
 	if p.collectErr != nil {
-		return danger.Render(fmt.Sprintf("n/a (%v)", p.collectErr))
+		return errStatus(p.collectErr, p.lastGood, muted, danger)
 	}
 	if !p.loaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
 	parts := []string{
-		fmt.Sprintf("%d processes · sort %s %s", len(p.view), p.sortKey, sortArrow(p.desc)),
+		muted.Render(fmt.Sprintf("%d processes · sort %s %s", len(p.view), p.sortKey, sortArrow(p.desc))),
 	}
 	if q := strings.TrimSpace(p.filter.Value()); q != "" {
-		parts = append(parts, fmt.Sprintf("filter %q", q))
+		parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
 	}
 	if p.status != "" {
-		parts = append(parts, p.status)
+		parts = append(parts, muted.Render(p.status))
 	}
-	return muted.Render(strings.Join(parts, " · "))
+	return strings.Join(parts, " · ")
 }
 
 func sortArrow(desc bool) string {

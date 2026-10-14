@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,7 +69,7 @@ var diskFixture = []core.Disk{
 // stays runtime territory, driving it here would stall the test.
 func newStorageScreen(t *testing.T, lister *fakeStorageLister) *storage {
 	t.Helper()
-	s := newStorage(lister, theme.Dark())
+	s := newStorage(lister, theme.Dark(), defaultStorageInterval)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must collect and start the cadence")
@@ -171,6 +172,9 @@ func TestStorageDisksViewToggle(t *testing.T) {
 	}
 }
 
+// TestStorageUsePctColorThresholds pins the aligned usage policy: the
+// same Success/Warning/Danger ladder as the dashboard's bars
+// (renderBar, dashboard.go) — one usage-color language across screens.
 func TestStorageUsePctColorThresholds(t *testing.T) {
 	th := theme.Dark()
 	tests := []struct {
@@ -178,12 +182,13 @@ func TestStorageUsePctColorThresholds(t *testing.T) {
 		pct  float64
 		want lipgloss.Color
 	}{
-		{"zero is default", 0, th.Foreground},
-		{"just below danger stays secondary", 89.9, th.Secondary},
+		{"zero is success", 0, th.Success},
+		{"healthy is success", 45, th.Success},
+		{"warning at 70", 70, th.Warning},
+		{"just below warning stays success", 69.9, th.Success},
+		{"just below danger stays warning", 89.9, th.Warning},
 		{"danger at 90", 90, th.Danger},
 		{"full is danger", 100, th.Danger},
-		{"secondary at 75", 75, th.Secondary},
-		{"just below secondary is default", 74.9, th.Foreground},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -370,7 +375,7 @@ func TestStorageTickRearmsOwnCadence(t *testing.T) {
 // round lands, and the listing summary.
 func TestStorageErrorAndCollectingStates(t *testing.T) {
 	// Before the first round: collecting.
-	fresh := newStorage(&fakeStorageLister{}, theme.Dark())
+	fresh := newStorage(&fakeStorageLister{}, theme.Dark(), defaultStorageInterval)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh filesystems view must show collecting..., got:\n%s", out)
 	}
@@ -380,7 +385,7 @@ func TestStorageErrorAndCollectingStates(t *testing.T) {
 		disks: diskFixture,
 		fsErr: errors.New("no proc mounts"),
 	}
-	s := newStorage(lister, theme.Dark())
+	s := newStorage(lister, theme.Dark(), defaultStorageInterval)
 	updated, _ := s.Update(s.collect()())
 	s = updated.(*storage)
 	if !s.disksLoaded || s.fsLoaded {
@@ -447,5 +452,34 @@ func TestStorageNavKeysClaimedAndOthersFallThrough(t *testing.T) {
 		if _, _, handled := s.UpdateKey(keyMsg(k)); handled {
 			t.Errorf("key %q must fall through to the global keymap", k)
 		}
+	}
+}
+
+// TestStorageStaleRoundAgesPerHalf pins the §5 keeps-last-good state
+// per view: a failed filesystems round keeps the last good rows while
+// the active view's status line carries the error plus the muted age
+// of those rows, and the healthy disks half of the same screen stays
+// untouched by the error and the age.
+func TestStorageStaleRoundAgesPerHalf(t *testing.T) {
+	s := newStorageScreen(t, &fakeStorageLister{filesystems: fsFixture, disks: diskFixture})
+
+	// The next round fails the filesystems half only.
+	s.lister = &fakeStorageLister{fsErr: errors.New("no proc mounts"), disks: diskFixture}
+	updated, _ := s.Update(s.collect()())
+	s = updated.(*storage)
+	s.fsLastGood = time.Now().Add(-45 * time.Second)
+
+	out := s.View(100, 24) // filesystems view is active
+	for _, want := range []string{"n/a (no proc mounts)", "stale 45s", "/home"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stale fs half must keep the error, the age and the rows, missing %q:\n%s", want, out)
+		}
+	}
+
+	// The disks half of the same screen is healthy: no error, no age.
+	s.UpdateKey(keyMsg("d"))
+	out = s.View(100, 24)
+	if strings.Contains(out, "stale") || strings.Contains(out, "no proc mounts") {
+		t.Errorf("the healthy disks view must carry neither the fs error nor its age:\n%s", out)
 	}
 }

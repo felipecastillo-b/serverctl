@@ -18,11 +18,12 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
 
-// servicesInterval is the Services refresh cadence of ARCHITECTURE.md
-// §3: 5 s, deliberately slower than the shell-wide 2 s RefreshMsg that
-// drives the dashboard and processes screens — unit churn is rare and
-// a D-Bus round is not free.
-const servicesInterval = 5 * time.Second
+// defaultServicesInterval is the Services refresh cadence of
+// ARCHITECTURE.md §3: 5 s, deliberately slower than the shell-wide 2 s
+// RefreshMsg that drives the dashboard and processes screens — unit
+// churn is rare and a D-Bus round is not free. It is the built-in
+// default the config `intervals.services` override replaces.
+const defaultServicesInterval = 5 * time.Second
 
 // servicesTickMsg re-arms one round of the screen's own cadence.
 type servicesTickMsg struct{}
@@ -107,6 +108,13 @@ type services struct {
 	manager core.UnitManager
 	theme   theme.Theme
 
+	// interval is the screen's own refresh cadence; lastGood is the
+	// instant of its last successful round, the keeps-last-good
+	// bookkeeping of §5: a failed round keeps the listing standing and
+	// the status line ages it.
+	interval time.Duration
+	lastGood time.Time
+
 	units []core.Service // last collected listing
 	view  []core.Service // sorted and filtered slice backing the table
 	table table.Model
@@ -131,15 +139,20 @@ type services struct {
 
 // NewServices builds the services screen listing units through lister,
 // rendering with th and running lifecycle verbs through manager. All()
-// passes the live collectors.System and actions.Actor{}; tests inject
-// fakes (ARCHITECTURE.md §4: actions is the only mutating layer).
-func NewServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager) Screen {
-	return newServices(lister, th, manager)
+// passes the live collectors.System, actions.Actor{} and the resolved
+// services cadence; tests inject fakes (ARCHITECTURE.md §4: actions is
+// the only mutating layer). A non-positive interval falls back to the
+// built-in §3 default.
+func NewServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager, interval time.Duration) Screen {
+	return newServices(lister, th, manager, interval)
 }
 
 // newServices is the concrete constructor; tests use it for white-box
 // state assertions.
-func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager) *services {
+func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager, interval time.Duration) *services {
+	if interval <= 0 {
+		interval = defaultServicesInterval
+	}
 	filter := textinput.New()
 	filter.Prompt = "/"
 	filter.CharLimit = 64
@@ -166,6 +179,7 @@ func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManage
 		// monitor: failures first (ARCHITECTURE.md §3).
 		sortKey:   unitSortActive,
 		lastWidth: -1,
+		interval:  interval,
 	}
 }
 
@@ -187,20 +201,20 @@ func unitColumnsFor(width int) []table.Column {
 }
 
 // Init collects the first round immediately and starts the screen's
-// own 5 s cadence.
+// own cadence at the configured interval.
 func (s *services) Init() tea.Cmd {
 	return tea.Batch(s.collect(), s.tick())
 }
 
-// tick schedules the next self-armed services tick. The chain dies
-// naturally while the screen is inactive — the router delivers
-// servicesTickMsg to the ACTIVE screen only, so nobody re-arms it —
-// and Init restarts it on re-entry. That is the §5
-// cancellable-on-switch story for now: leaving and re-entering the
-// screen collects immediately, and the next pending tick is the manual
-// refresh.
+// tick schedules the next self-armed services tick on the screen's
+// configured cadence. The chain dies naturally while the screen is
+// inactive — the router delivers servicesTickMsg to the ACTIVE screen
+// only, so nobody re-arms it — and Init restarts it on re-entry. That
+// is the §5 cancellable-on-switch story for now: leaving and
+// re-entering the screen collects immediately, and the next pending
+// tick is the manual refresh.
 func (s *services) tick() tea.Cmd {
-	return tea.Tick(servicesInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.interval, func(time.Time) tea.Msg {
 		return servicesTickMsg{}
 	})
 }
@@ -220,6 +234,7 @@ func (s *services) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			s.collectErr = nil
 			s.units = msg.services
 			s.loaded = true
+			s.lastGood = time.Now()
 		}
 		s.reapply()
 	case unitResultMsg:
@@ -600,27 +615,31 @@ func (s *services) View(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// statusLine composes the one-line footer: collection errors first,
-// else the listing summary — with the failed units called out — plus
-// the last action outcome.
+// statusLine composes the one-line footer: the collection error first
+// — with the muted age of the listing still on screen while it stays
+// (§5's keeps-last-good state) — the muted collecting state until the
+// first round lands, else the listing summary with the failed units
+// called out in the danger role plus the last action outcome.
 func (s *services) statusLine(muted, danger lipgloss.Style) string {
 	if s.collectErr != nil {
-		return danger.Render(fmt.Sprintf("n/a (%v)", s.collectErr))
+		return errStatus(s.collectErr, s.lastGood, muted, danger)
 	}
 	if !s.loaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
 	parts := []string{
-		fmt.Sprintf("%d services · sort %s %s", len(s.view), s.sortKey, sortArrow(s.desc)),
+		muted.Render(fmt.Sprintf("%d services · sort %s %s", len(s.view), s.sortKey, sortArrow(s.desc))),
 	}
 	if failed := failedCount(s.view); failed > 0 {
-		parts = append(parts, fmt.Sprintf("%d failed", failed))
+		// The failed count is the one number on this line needing
+		// eyes; the muted summary around it must not defuse it.
+		parts = append(parts, danger.Render(fmt.Sprintf("%d failed", failed)))
 	}
 	if q := strings.TrimSpace(s.filter.Value()); q != "" {
-		parts = append(parts, fmt.Sprintf("filter %q", q))
+		parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
 	}
 	if s.status != "" {
-		parts = append(parts, s.status)
+		parts = append(parts, muted.Render(s.status))
 	}
-	return muted.Render(strings.Join(parts, " · "))
+	return strings.Join(parts, " · ")
 }

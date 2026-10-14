@@ -16,11 +16,12 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
 
-// logsInterval is the Logs refresh cadence of ARCHITECTURE.md §3:
-// "follow, ~1 s" — deliberately faster than the shell-wide 2 s
+// defaultLogsInterval is the Logs refresh cadence of ARCHITECTURE.md
+// §3: "follow, ~1 s" — deliberately faster than the shell-wide 2 s
 // RefreshMsg, because a journal tail is worth watching live and a
-// local sdjournal round is cheap.
-const logsInterval = time.Second
+// local sdjournal round is cheap. It is the built-in default the
+// config `intervals.logs` override replaces.
+const defaultLogsInterval = time.Second
 
 // The follow pipeline's batch sizes: the first load shows the newest
 // 200 lines, each 1 s round fetches at most 500 more, and the buffer
@@ -48,9 +49,19 @@ type entriesMsg struct {
 // logs is the journal tail screen: the live log view collected through
 // the JournalReader port with follow/pause scrolling and a
 // client-side filter over unit and message.
+//
+// Logs keeps no stale-age bookkeeping, deliberately: the buffer is a
+// tail of historical entries that carry their own timestamp in every
+// rendered line, so a failed follow round leaves the shown entries
+// honestly dated — "stale Ns" would misdescribe historical data. The
+// other keeps-last-good screens of §5 show current-state snapshots,
+// where the age of the shown data is the missing signal; here the
+// error line itself says the tail stopped following.
 type logs struct {
 	reader core.JournalReader
 	theme  theme.Theme
+
+	interval time.Duration // the screen's own follow cadence
 
 	entries []core.JournalEntry // consumed buffer, oldest first
 	view    []core.JournalEntry // filtered slice backing the viewport
@@ -72,15 +83,20 @@ type logs struct {
 }
 
 // NewLogs builds the logs screen tailing the journal through reader
-// and rendering with th. All() passes the live collectors.System;
-// tests inject fakes (ARCHITECTURE.md §2: the UI consumes ports).
-func NewLogs(reader core.JournalReader, th theme.Theme) Screen {
-	return newLogs(reader, th)
+// and rendering with th. All() passes the live collectors.System and
+// the resolved logs cadence; tests inject fakes (ARCHITECTURE.md §2:
+// the UI consumes ports). A non-positive interval falls back to the
+// built-in §3 default.
+func NewLogs(reader core.JournalReader, th theme.Theme, interval time.Duration) Screen {
+	return newLogs(reader, th, interval)
 }
 
 // newLogs is the concrete constructor; tests use it for white-box
 // state assertions.
-func newLogs(reader core.JournalReader, th theme.Theme) *logs {
+func newLogs(reader core.JournalReader, th theme.Theme, interval time.Duration) *logs {
+	if interval <= 0 {
+		interval = defaultLogsInterval
+	}
 	filter := textinput.New()
 	filter.Prompt = "/"
 	filter.CharLimit = 64
@@ -105,7 +121,8 @@ func newLogs(reader core.JournalReader, th theme.Theme) *logs {
 		filter: filter,
 		// A log tail starts at the bottom and stays there until the
 		// user scrolls away.
-		follow: true,
+		follow:   true,
+		interval: interval,
 	}
 }
 
@@ -122,13 +139,14 @@ func (s *logs) Init() tea.Cmd {
 	return tea.Batch(collect, s.tick())
 }
 
-// tick schedules the next self-armed follow tick. The chain dies
-// naturally while the screen is inactive — the router delivers
-// logsTickMsg to the ACTIVE screen only, so nobody re-arms it — and
-// Init restarts it on re-entry. That is the §5 cancellable-on-switch
-// story: leaving stops the polling, re-entering resumes live.
+// tick schedules the next self-armed follow tick on the configured
+// cadence. The chain dies naturally while the screen is inactive —
+// the router delivers logsTickMsg to the ACTIVE screen only, so
+// nobody re-arms it — and Init restarts it on re-entry. That is the
+// §5 cancellable-on-switch story: leaving stops the polling,
+// re-entering resumes live.
 func (s *logs) tick() tea.Cmd {
-	return tea.Tick(logsInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.interval, func(time.Time) tea.Msg {
 		return logsTickMsg{}
 	})
 }
@@ -268,10 +286,10 @@ func (s *logs) filterEntries() []core.JournalEntry {
 
 // logLines renders the view as `Jan 02 15:04:05 · unit · message`
 // lines, colored by syslog priority: err and worse (0–3) danger,
-// warning (4) secondary, everything else plain.
+// warning (4) the warning role, everything else plain.
 func (s *logs) logLines() []string {
 	danger := lipgloss.NewStyle().Foreground(s.theme.Danger)
-	secondary := lipgloss.NewStyle().Foreground(s.theme.Secondary)
+	warning := lipgloss.NewStyle().Foreground(s.theme.Warning)
 	out := make([]string, len(s.view))
 	for i, e := range s.view {
 		line := fmt.Sprintf("%s · %s · %s", e.Time.Format(logTimeLayout), e.Unit, e.Message)
@@ -279,7 +297,7 @@ func (s *logs) logLines() []string {
 		case e.Priority <= 3:
 			out[i] = danger.Render(line)
 		case e.Priority == 4:
-			out[i] = secondary.Render(line)
+			out[i] = warning.Render(line)
 		default:
 			out[i] = line
 		}
@@ -337,7 +355,10 @@ func (s *logs) View(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// statusLine composes the one-line footer: collection errors first,
+// statusLine composes the one-line footer: collection errors first —
+// the error alone, no stale-age fragment: the buffer is a tail of
+// historical entries that carry their own timestamps, so aging them
+// would misdescribe them (the struct comment documents the call) —
 // else the line summary with the follow state, the active filter and
 // — for a genuinely empty buffer — journald's unprivileged visibility
 // explained (a filter that matches nothing is the user's own doing
@@ -347,7 +368,7 @@ func (s *logs) statusLine(muted, danger lipgloss.Style) string {
 		return danger.Render(fmt.Sprintf("n/a (%v)", s.collectErr))
 	}
 	if !s.loaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
 	followState := "paused"
 	if s.follow {

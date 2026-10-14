@@ -19,11 +19,12 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
 )
 
-// storageInterval is the Storage refresh cadence of ARCHITECTURE.md
-// §3: 30 s, the slowest module tick — mounts and disk geometry rarely
-// change and every round walks all of /proc/mounts with a statfs per
-// row, which is not a 2 s job.
-const storageInterval = 30 * time.Second
+// defaultStorageInterval is the Storage refresh cadence of
+// ARCHITECTURE.md §3: 30 s, the slowest module tick — mounts and disk
+// geometry rarely change and every round walks all of /proc/mounts
+// with a statfs per row, which is not a 2 s job. It is the built-in
+// default the config `intervals.storage` override replaces.
+const defaultStorageInterval = 30 * time.Second
 
 // storageTickMsg re-arms one round of the screen's own cadence.
 type storageTickMsg struct{}
@@ -85,6 +86,14 @@ type storage struct {
 	lister core.StorageLister
 	theme  theme.Theme
 
+	// interval is the screen's own refresh cadence; the per-half
+	// lastGood instants are the keeps-last-good bookkeeping of §5: a
+	// failed half keeps its listing standing and the status line ages
+	// it.
+	interval      time.Duration
+	fsLastGood    time.Time
+	disksLastGood time.Time
+
 	filesystems []core.Partition // last collected round, both halves
 	disks       []core.Disk
 
@@ -110,15 +119,19 @@ type storage struct {
 
 // NewStorage builds the storage screen listing filesystems and disks
 // through lister and rendering with th. All() passes the live
-// collectors.System; tests inject fakes (ARCHITECTURE.md §2: the UI
-// consumes ports).
-func NewStorage(lister core.StorageLister, th theme.Theme) Screen {
-	return newStorage(lister, th)
+// collectors.System and the resolved storage cadence; tests inject
+// fakes (ARCHITECTURE.md §2: the UI consumes ports). A non-positive
+// interval falls back to the built-in §3 default.
+func NewStorage(lister core.StorageLister, th theme.Theme, interval time.Duration) Screen {
+	return newStorage(lister, th, interval)
 }
 
 // newStorage is the concrete constructor; tests use it for white-box
 // state assertions.
-func newStorage(lister core.StorageLister, th theme.Theme) *storage {
+func newStorage(lister core.StorageLister, th theme.Theme, interval time.Duration) *storage {
+	if interval <= 0 {
+		interval = defaultStorageInterval
+	}
 	filter := textinput.New()
 	filter.Prompt = "/"
 	filter.CharLimit = 64
@@ -145,6 +158,7 @@ func newStorage(lister core.StorageLister, th theme.Theme) *storage {
 		fsSort:    fsSortUse,
 		fsDesc:    true,
 		lastWidth: -1,
+		interval:  interval,
 	}
 }
 
@@ -196,18 +210,19 @@ func (s *storage) columnsFor(width int) []table.Column {
 }
 
 // Init collects the first round immediately — both listings in one
-// command — and starts the screen's own 30 s cadence.
+// command — and starts the screen's own cadence at the configured
+// interval.
 func (s *storage) Init() tea.Cmd {
 	return tea.Batch(s.collect(), s.tick())
 }
 
-// tick schedules the next self-armed storage tick. The chain dies
-// naturally while the screen is inactive — the router delivers
-// storageTickMsg to the ACTIVE screen only, so nobody re-arms it —
-// and Init restarts it on re-entry (the §5 cancellable-on-switch
-// story, same as the services and logs screens).
+// tick schedules the next self-armed storage tick on the configured
+// cadence. The chain dies naturally while the screen is inactive —
+// the router delivers storageTickMsg to the ACTIVE screen only, so
+// nobody re-arms it — and Init restarts it on re-entry (the §5
+// cancellable-on-switch story, same as the services and logs screens).
 func (s *storage) tick() tea.Cmd {
-	return tea.Tick(storageInterval, func(time.Time) tea.Msg {
+	return tea.Tick(s.interval, func(time.Time) tea.Msg {
 		return storageTickMsg{}
 	})
 }
@@ -226,10 +241,12 @@ func (s *storage) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		if msg.fsErr == nil {
 			s.filesystems = msg.filesystems
 			s.fsLoaded = true
+			s.fsLastGood = time.Now()
 		}
 		if msg.diskErr == nil {
 			s.disks = msg.disks
 			s.disksLoaded = true
+			s.disksLastGood = time.Now()
 		}
 		s.reapply()
 	}
@@ -498,16 +515,19 @@ func indexOfDisk(disks []core.Disk, name string) int {
 	return -1
 }
 
-// usePctColor maps a usage percentage to its theme color: Danger at
-// 90% and above, Secondary from 75%, the default text color below.
+// usePctColor maps a usage percentage to its theme color with the
+// same policy as the dashboard's bars (renderBar, dashboard.go):
+// Danger at 90% and above, Warning from 70%, Success below — one
+// usage-color language across screens. The thresholds once diverged
+// (Secondary from 75%) and a brand tone is not a health signal.
 func usePctColor(pct float64, th theme.Theme) lipgloss.Color {
 	switch {
 	case pct >= 90:
 		return th.Danger
-	case pct >= 75:
-		return th.Secondary
+	case pct >= 70:
+		return th.Warning
 	default:
-		return th.Foreground
+		return th.Success
 	}
 }
 
@@ -619,37 +639,38 @@ func (s *storage) rowsFor(width int) []table.Row {
 }
 
 // statusLine composes the one-line footer: the ACTIVE view's
-// collection error first, its collecting state until the first round
-// lands, else the view's listing summary with sort direction and the
-// active filter.
+// collection error first — with the muted age of that half's listing
+// still on screen while it stays (§5's keeps-last-good state) — its
+// muted collecting state until the first round lands, else the view's
+// listing summary with sort direction and the active filter.
 func (s *storage) statusLine(muted, danger lipgloss.Style) string {
 	if s.view == storageDisks {
 		if s.diskErr != nil {
-			return danger.Render(fmt.Sprintf("n/a (%v)", s.diskErr))
+			return errStatus(s.diskErr, s.disksLastGood, muted, danger)
 		}
 		if !s.disksLoaded {
-			return danger.Render("collecting...")
+			return loadingStatus(muted)
 		}
 		parts := []string{
-			fmt.Sprintf("%d disks · sort name %s", len(s.diskView), sortArrow(s.diskDesc)),
+			muted.Render(fmt.Sprintf("%d disks · sort name %s", len(s.diskView), sortArrow(s.diskDesc))),
 		}
 		if q := strings.TrimSpace(s.filter.Value()); q != "" {
-			parts = append(parts, fmt.Sprintf("filter %q", q))
+			parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
 		}
-		return muted.Render(strings.Join(parts, " · "))
+		return strings.Join(parts, " · ")
 	}
 
 	if s.fsErr != nil {
-		return danger.Render(fmt.Sprintf("n/a (%v)", s.fsErr))
+		return errStatus(s.fsErr, s.fsLastGood, muted, danger)
 	}
 	if !s.fsLoaded {
-		return danger.Render("collecting...")
+		return loadingStatus(muted)
 	}
 	parts := []string{
-		fmt.Sprintf("%d filesystems · sort %s %s", len(s.fsView), s.fsSort, sortArrow(s.fsDesc)),
+		muted.Render(fmt.Sprintf("%d filesystems · sort %s %s", len(s.fsView), s.fsSort, sortArrow(s.fsDesc))),
 	}
 	if q := strings.TrimSpace(s.filter.Value()); q != "" {
-		parts = append(parts, fmt.Sprintf("filter %q", q))
+		parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
 	}
-	return muted.Render(strings.Join(parts, " · "))
+	return strings.Join(parts, " · ")
 }

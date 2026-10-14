@@ -79,7 +79,7 @@ var attemptsFixture = []core.SSHAttempt{
 // stay runtime territory, driving them here would stall the test.
 func newAccessScreen(t *testing.T, sessions *fakeSessionLister, attempts *fakeAttemptLister) *access {
 	t.Helper()
-	s := newAccess(sessions, attempts, theme.Dark())
+	s := newAccess(sessions, attempts, theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must start both chains and collect both listings")
@@ -262,7 +262,7 @@ func TestAccessTwoChainsReArmIndependently(t *testing.T) {
 // one view never disturbing the other view's good listing or state.
 func TestAccessErrorPersistsPerView(t *testing.T) {
 	// Before any round: the active view collects.
-	fresh := newAccess(&fakeSessionLister{}, &fakeAttemptLister{}, theme.Dark())
+	fresh := newAccess(&fakeSessionLister{}, &fakeAttemptLister{}, theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh screen must show collecting..., got:\n%s", out)
 	}
@@ -271,7 +271,7 @@ func TestAccessErrorPersistsPerView(t *testing.T) {
 	s := newAccess(
 		&fakeSessionLister{err: errors.New("no utmp")},
 		&fakeAttemptLister{attempts: attemptsFixture},
-		theme.Dark())
+		theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
 	updated, _ := s.Update(s.collectSessions()())
 	s = updated.(*access)
 	if s.sessionsLoaded {
@@ -301,7 +301,7 @@ func TestAccessErrorPersistsPerView(t *testing.T) {
 	s = newAccess(
 		&fakeSessionLister{sessions: sessionsFixture},
 		&fakeAttemptLister{err: errors.New("journal locked")},
-		theme.Dark())
+		theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
 	updated, _ = s.Update(s.collectSessions()())
 	s = updated.(*access)
 	updated, _ = s.Update(s.collectAttempts()())
@@ -372,5 +372,53 @@ func TestAccessCursorKeptOnRefresh(t *testing.T) {
 	s = updated.(*access)
 	if s.table.Cursor() != 0 {
 		t.Errorf("cursor must fall to the top when its row vanishes, got %d", s.table.Cursor())
+	}
+}
+
+// TestAccessStaleRoundAgesPerView pins the §5 keeps-last-good state
+// per view: a failed sessions round keeps the last good rows while
+// the active view's status line carries the error plus the muted age
+// of those rows, and the healthy attempts view of the same screen
+// stays untouched by the error and the age.
+func TestAccessStaleRoundAgesPerView(t *testing.T) {
+	s := newAccessScreen(t,
+		&fakeSessionLister{sessions: sessionsFixture},
+		&fakeAttemptLister{attempts: attemptsFixture})
+
+	// The next sessions round dies; the attempts chain keeps flowing.
+	s.sessions = &fakeSessionLister{err: errors.New("no utmp")}
+	updated, _ := s.Update(s.collectSessions()())
+	s = updated.(*access)
+	s.sessionsLastGood = time.Now().Add(-45 * time.Second)
+
+	out := s.View(100, 24) // sessions view is active
+	for _, want := range []string{"n/a (no utmp)", "stale 45s", "alice"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stale sessions view must keep the error, the age and the rows, missing %q:\n%s", want, out)
+		}
+	}
+
+	// The attempts view of the same screen is healthy: no error, no age.
+	s.UpdateKey(keyMsg("v"))
+	out = s.View(100, 24)
+	if strings.Contains(out, "stale") || strings.Contains(out, "no utmp") {
+		t.Errorf("the healthy attempts view must carry neither the sessions error nor its age:\n%s", out)
+	}
+	if !strings.Contains(out, "3 attempts · 2 failed") {
+		t.Errorf("the attempts view must render its healthy summary:\n%s", out)
+	}
+}
+
+// TestAccessVerdictRoles pins the RESULT column's role mapping: an
+// accepted login renders in the success role, a failed one in danger —
+// the one column of the audit listing whose color carries meaning.
+func TestAccessVerdictRoles(t *testing.T) {
+	for _, th := range []theme.Theme{theme.Dark(), theme.Light()} {
+		if got := verdictColor(true, th); got != th.Success {
+			t.Errorf("%s: accepted verdict color = %v, want the success role %v", th.Name, got, th.Success)
+		}
+		if got := verdictColor(false, th); got != th.Danger {
+			t.Errorf("%s: failed verdict color = %v, want the danger role %v", th.Name, got, th.Danger)
+		}
 	}
 }
