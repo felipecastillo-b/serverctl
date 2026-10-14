@@ -1,17 +1,36 @@
-# GoReleaser scaffold — the first real release is v1.0.0 (milestone M8, see ROADMAP.md).
+# GoReleaser config — the first real release is v0.1.0 (milestone M8, see ROADMAP.md).
 version: 2
 
 project_name: serverctl
 
+# sdjournal (go-systemd) is cgo: it compiles against systemd/sd-journal.h
+# (see internal/collectors/journal.go's build note). goreleaser's default
+# CGO_ENABLED=0 would break the journal collector, so every build sets
+# CGO_ENABLED=1 explicitly. The arm64 target is a cross-cgo build: CC points
+# at the aarch64 cross toolchain (gcc-aarch64-linux-gnu, installed by the
+# release workflow), while amd64 builds with the runner's native cc.
 builds:
-  - id: serverctl
+  - id: serverctl-amd64
     main: ./cmd/serverctl
     binary: serverctl
     goos:
       - linux
     goarch:
       - amd64
+    env:
+      - CGO_ENABLED=1
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  - id: serverctl-arm64
+    main: ./cmd/serverctl
+    binary: serverctl
+    goos:
+      - linux
+    goarch:
       - arm64
+    env:
+      - CGO_ENABLED=1
+      - CC=aarch64-linux-gnu-gcc
     ldflags:
       - -s -w -X main.version={{.Version}}
 
@@ -24,3 +43,20 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge pull request"
+      - "^Merge branch"
+      - "^docs:"
+      - "^chore:"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  github:
+    owner: felipecastillo-b
+    name: serverctl

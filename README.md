@@ -15,11 +15,13 @@ action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
-> **Early development.** The interactive TUI shell arrives in milestone M1. The MVP
-> (milestones M0–M4) covers the dashboard, processes, systemd services, and journal
-> logs. See [ROADMAP.md](ROADMAP.md) for the full milestone plan.
+> **Milestones M0–M7 complete.** The binary launches the full TUI: dashboard,
+> processes, services and journal logs, storage, network, packages, and access
+> audit, with a command palette, keyboard and mouse control, and dark/light
+> themes. The first release is v0.1.0 (milestone M8) — see [ROADMAP.md](ROADMAP.md)
+> for what is next.
 
-## Planned features
+## Features
 
 - Dashboard overview: CPU, memory, load, uptime, kernel, hardware summary
 - Process list with sort/filter and confirmed signal actions
@@ -39,7 +41,25 @@ action whitelisted and gated behind a confirmation prompt.
 
 ## Install
 
-Release binaries arrive with v1.0.0 (milestone M8). Today, build from source:
+Three ways to get serverctl:
+
+**Prebuilt release asset** — download the tarball for your architecture from the
+[v0.1.0 release](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.1.0)
+(`serverctl_*_linux_amd64.tar.gz` or `serverctl_*_linux_arm64.tar.gz`), unpack
+it, and put `serverctl` on your `PATH`.
+
+**Arch Linux, from the AUR**:
+
+```bash
+git clone https://aur.archlinux.org/serverctl.git
+cd serverctl
+makepkg -si
+```
+
+or with an AUR helper, e.g. `paru -S serverctl`.
+
+**From source** — requires Go 1.24+ and the systemd headers (`systemd-libs` on
+Arch, `libsystemd-dev` on Debian/Ubuntu), because the journal reader is cgo:
 
 ```bash
 git clone https://github.com/felipecastillo-b/serverctl.git
@@ -50,7 +70,8 @@ make build        # produces bin/serverctl
 ## Usage
 
 ```bash
-bin/serverctl     # prints version placeholder — the TUI arrives in milestone M1
+bin/serverctl           # launch the TUI (q or ctrl+c quits, ? help, ctrl+p palette)
+bin/serverctl -version  # print the build version and exit
 ```
 
 ## Privileges
@@ -87,7 +108,7 @@ Then add your user to the group: `usermod -aG serverctl $USER`.
 | Document | Contents |
 |----------|----------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, modules, data sources, security model, testing strategy |
-| [ROADMAP.md](ROADMAP.md) | Milestones M0–M8, MVP and v1.0.0 cuts |
+| [ROADMAP.md](ROADMAP.md) | Milestones M0–M8, MVP and v0.1.0 cuts |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Workflow, commit conventions, quality and security gates |
 
 ## Development

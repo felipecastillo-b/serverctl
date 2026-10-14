@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Goreleaser Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # Changelog generation walks the history between tags, so the
+        # default shallow checkout of a tag push is not enough.
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        # sdjournal (go-systemd) is cgo: it compiles against
+        # systemd/sd-journal.h. The arm64 release target is a
+        # cross-cgo build, so it also needs the aarch64 cross
+        # toolchain — see .goreleaser.yaml.
+        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev gcc-aarch64-linux-gnu
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
