@@ -158,7 +158,7 @@ type SSHAttempt struct {
 
 - Sidebar switches modules; screens form a stack (e.g., logs → filtered unit view), `esc` pops back.
 - Global keymap (quit, palette, help, sidebar focus) is shadowed by the active screen's keymap (sort, filter, signal).
-- Command palette jumps to any module or whitelisted action by fuzzy name; the help overlay lists every binding active in the current context.
+- Command palette jumps to any module by fuzzy name (keyboard-only, like the help overlay); palette-triggered whitelisted actions are a follow-up pending routable action messages and root-level confirm gating. The help overlay lists every binding active in the current context.
 - Mouse: cell-motion events hit-tested against registered zones (sidebar items, table rows, buttons).
 - Parity rule: **every mouse action has a keyboard equivalent**; all bindings are configurable via the config file.
 
