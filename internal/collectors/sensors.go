@@ -177,10 +177,10 @@ func sensorTier(chip, label string) int {
 			return 2
 		}
 	case gpuChips[chip]:
-		switch {
-		case label == "edge", label == "gpu", label == "core":
+		switch label {
+		case "edge", "gpu", "core":
 			return 10
-		case label == "junction", label == "hotspot":
+		case "junction", "hotspot":
 			return 11
 		default:
 			return 12
