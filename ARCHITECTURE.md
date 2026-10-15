@@ -66,6 +66,8 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 
 Dashboard and Processes ride the shell-wide `refresh_seconds` ticker; every other chain is self-ticked with its own default, and the config file's `intervals` section overrides any of them (per-key merge in seconds, minimum 1).
 
+Sensors arrive pre-ordered by dashboard usefulness (CPU headline temps first, unknown chips last); the Sensors collector owns the ordering, and the Dashboard renders its slice unmodified.
+
 ## 4. Data models
 
 ```go

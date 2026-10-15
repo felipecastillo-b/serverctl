@@ -168,3 +168,107 @@ func TestSensorsDeviceDirNotReadWhenClassDirHasTemps(t *testing.T) {
 		t.Errorf("readings = %+v, want only the single 40.0 class-dir sensor", readings)
 	}
 }
+
+func TestSensorsOrderedByDashboardUsefulness(t *testing.T) {
+	// A representative multi-chip machine, built in scrambled hwmonN order
+	// so directory order proves nothing: the Dashboard must see CPU
+	// headline temps first, then GPU, storage, board, battery, unknown.
+	root := t.TempDir()
+	classDir := filepath.Join(root, "sys", "class", "hwmon")
+	chips := []struct {
+		dir   string
+		name  string
+		files map[string]string
+	}{
+		{"hwmon0", "amdgpu", map[string]string{
+			"temp1_input": "60000\n", "temp1_label": "edge\n",
+		}},
+		{"hwmon1", "coretemp", map[string]string{
+			"temp1_input": "43000\n", "temp1_label": "Package id 0\n",
+			"temp2_input": "41000\n", "temp2_label": "Core 0\n",
+		}},
+		{"hwmon2", "nvme", map[string]string{
+			"temp1_input": "35000\n", "temp1_label": "Composite\n",
+		}},
+		{"hwmon3", "acpitz", map[string]string{
+			"temp1_input": "25000\n",
+		}},
+		{"hwmon4", "BAT0", map[string]string{
+			"temp1_input": "30000\n",
+		}},
+		{"hwmon5", "unknownchip", map[string]string{
+			"temp1_input": "33000\n",
+		}},
+	}
+	for _, chip := range chips {
+		dir := filepath.Join(classDir, chip.dir)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", chip.dir, err)
+		}
+		files := map[string]string{"name": chip.name + "\n"}
+		for fileName, contents := range chip.files {
+			files[fileName] = contents
+		}
+		writeSensorFiles(t, dir, files)
+	}
+
+	readings, err := collectors.New(root).Sensors()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []core.SensorReading{
+		{Name: "coretemp", Label: "Package id 0", Celsius: 43.0},
+		{Name: "coretemp", Label: "Core 0", Celsius: 41.0},
+		{Name: "amdgpu", Label: "edge", Celsius: 60.0},
+		{Name: "nvme", Label: "Composite", Celsius: 35.0},
+		{Name: "acpitz", Label: "temp1", Celsius: 25.0},
+		{Name: "BAT0", Label: "temp1", Celsius: 30.0},
+		{Name: "unknownchip", Label: "temp1", Celsius: 33.0},
+	}
+	if len(readings) != len(want) {
+		t.Fatalf("got %d readings, want %d: %+v", len(readings), len(want), readings)
+	}
+	for i := range want {
+		if readings[i] != want[i] {
+			t.Errorf("readings[%d] = %+v, want %+v", i, readings[i], want[i])
+		}
+	}
+}
+
+func TestSensorsCPUHeadlineLabelsRankFirst(t *testing.T) {
+	// k10temp (AMD): Tdie is the CPU headline, Tctl next, per-CCD temps
+	// after — even when a CCD happens to be the coolest sensor, rank
+	// drives the order, not the value.
+	root := t.TempDir()
+	dir := filepath.Join(root, "sys", "class", "hwmon", "hwmon0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir fixture: %v", err)
+	}
+	writeSensorFiles(t, dir, map[string]string{
+		"name":        "k10temp\n",
+		"temp1_input": "52000\n",
+		"temp1_label": "Tdie\n",
+		"temp2_input": "54000\n",
+		"temp2_label": "Tctl\n",
+		"temp3_input": "51000\n",
+		"temp3_label": "Tccd1\n",
+	})
+
+	readings, err := collectors.New(root).Sensors()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []core.SensorReading{
+		{Name: "k10temp", Label: "Tdie", Celsius: 52.0},
+		{Name: "k10temp", Label: "Tctl", Celsius: 54.0},
+		{Name: "k10temp", Label: "Tccd1", Celsius: 51.0},
+	}
+	if len(readings) != len(want) {
+		t.Fatalf("got %d readings, want %d: %+v", len(readings), len(want), readings)
+	}
+	for i := range want {
+		if readings[i] != want[i] {
+			t.Errorf("readings[%d] = %+v, want %+v", i, readings[i], want[i])
+		}
+	}
+}
