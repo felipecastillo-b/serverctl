@@ -29,12 +29,20 @@ func (s System) Sensors() ([]core.SensorReading, error) {
 
 	var readings []core.SensorReading
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+		// Real sysfs exposes hwmonN as a SYMLINK into /sys/devices, and
+		// entry.IsDir() is lstat-based (false for symlinks), so the walk
+		// must not gate on it. A non-directory entry simply fails the
+		// per-device reads below and is skipped gracefully.
 		dir := filepath.Join(hwmonRoot, entry.Name())
 		name := readSensorName(dir, entry.Name())
-		readings = append(readings, readHwmonDir(dir, name)...)
+		found := readHwmonDir(dir, name)
+		readings = append(readings, found...)
+		if len(found) == 0 {
+			// Legacy layout: older/odd drivers keep their temp files in
+			// <hwmon>/device instead of the class dir. Read it only when
+			// the class dir yielded no temps so readings never count twice.
+			readings = append(readings, readHwmonDir(filepath.Join(dir, "device"), name)...)
+		}
 	}
 
 	sort.Slice(readings, func(i, j int) bool {
