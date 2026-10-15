@@ -15,11 +15,12 @@ action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
-> **Milestones M0–M7 complete.** The binary launches the full TUI: dashboard,
-> processes, services and journal logs, storage, network, packages, and access
-> audit, with a command palette, keyboard and mouse control, and dark/light
-> themes. The first release is v0.1.0 (milestone M8) — see [ROADMAP.md](ROADMAP.md)
-> for what is next.
+> **v0.1.0 is released — milestones M0–M8 complete.** The binary launches the
+> full TUI: dashboard, processes, services and journal logs, storage, network,
+> packages, and access audit, with a command palette, keyboard and mouse
+> control, and dark/light themes. Grab it from the
+> [releases page](https://github.com/felipecastillo-b/serverctl/releases) —
+> [ROADMAP.md](ROADMAP.md) tracks what is next.
 
 ## Features
 
@@ -36,27 +37,20 @@ action whitelisted and gated behind a confirmation prompt.
 
 ## Requirements
 
-- Linux — Arch Linux is the first target platform
-- Go 1.24+ to build from source
+- Linux. serverctl targets systemd-based distributions — the services and
+  journal screens read systemd over D-Bus and sdjournal.
+- Arch Linux is the verified platform today. **Support for more distributions
+  is coming soon.**
+- Go 1.24+ (plus the systemd headers) only if you build from source.
 
 ## Install
 
-Three ways to get serverctl:
+Two ways to get serverctl today, straight from GitHub:
 
-**Prebuilt release asset** — download the tarball for your architecture from the
-[v0.1.0 release](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.1.0)
+**Prebuilt binary (recommended)** — download the tarball for your architecture
+from the [releases page](https://github.com/felipecastillo-b/serverctl/releases)
 (`serverctl_*_linux_amd64.tar.gz` or `serverctl_*_linux_arm64.tar.gz`), unpack
 it, and put `serverctl` on your `PATH`.
-
-**Arch Linux, from the AUR**:
-
-```bash
-git clone https://aur.archlinux.org/serverctl.git
-cd serverctl
-makepkg -si
-```
-
-or with an AUR helper, e.g. `paru -S serverctl`.
 
 **From source** — requires Go 1.24+ and the systemd headers (`systemd-libs` on
 Arch, `libsystemd-dev` on Debian/Ubuntu), because the journal reader is cgo:
@@ -66,6 +60,14 @@ git clone https://github.com/felipecastillo-b/serverctl.git
 cd serverctl
 make build        # produces bin/serverctl
 ```
+
+**Arch Linux, from the AUR — coming soon.** The source-based
+[PKGBUILD](packaging/aur/PKGBUILD) already lives in this repository; publishing
+it to the AUR is planned.
+
+**Other distributions — coming soon.** Today the packages screen counts through
+pacman's local database, so Arch Linux is the verified platform; multi-distro
+support is on the roadmap.
 
 ## Usage
 
