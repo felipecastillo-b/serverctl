@@ -117,6 +117,26 @@ type PackageCounter interface {
 	Count() (PackageCount, error)
 }
 
+// ContainerLister is the Containers module's read port: one listing
+// of the local Docker-compatible daemon's containers. The port is
+// source- and runtime-agnostic by construction: it speaks the
+// daemon's data, not a particular client or socket, and the runtime
+// label rides IN the result (ContainerList.Runtime), so one adapter
+// serves Docker and Podman without this contract or the screen
+// changing, as with PackageCounter. collectors.System implements it
+// over a local unix socket (ARCHITECTURE.md §3, §8): Docker and
+// Podman's compat API both answer GET /containers/json, and no
+// remote/TCP endpoint is in scope. The listing is read-only — the
+// module never starts, stops or removes a container. An empty
+// listing is a legitimate answer (a runtime with no containers),
+// never an error, and the exact row policy lives in the
+// implementer's doc comment, as with UnitLister.
+type ContainerLister interface {
+	// Containers returns every container the local daemon reports,
+	// in daemon order, labeled with the runtime it came from.
+	Containers() (ContainerList, error)
+}
+
 // SessionLister is the Users module's sessions read port: the
 // host's current login sessions. collectors.System implements it
 // over logind D-Bus (ARCHITECTURE.md §3, §8), with the utmp file as

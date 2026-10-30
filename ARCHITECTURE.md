@@ -149,6 +149,17 @@ type SSHAttempt struct {
     SourceIP string
     Success  bool
 }
+type Container struct { // M10: read-only listing; uptime is display-derived
+    ID      string        // full daemon ID; the screen shows the short form
+    Name    string        // primary name, leading "/" stripped
+    Image   string
+    State   string        // running, exited, paused, created, restarting, dead
+    Created time.Time
+}
+type ContainerList struct {
+    Runtime    string // "docker" or "podman" — provenance from the socket
+    Containers []Container
+}
 ```
 
 ## 5. Event & update system

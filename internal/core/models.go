@@ -283,3 +283,40 @@ type SSHAttempt struct {
 	SourceIP string
 	Success  bool
 }
+
+// Container is one Docker-compatible container as the Containers
+// screen will list it (ARCHITECTURE.md §4): the daemon's full ID,
+// the container's primary name with the daemon's leading slash
+// stripped, the image reference it was created from, its lifecycle
+// state and when it was created. The read is strictly one-way —
+// serverctl observes containers and never starts, stops or removes
+// them — so this shape carries observation, not control.
+//
+// State passes the daemon's own vocabulary through unmodified:
+// running, exited, paused, created, restarting, dead. Uptime is NOT
+// a field here because it is display-derived: the screen computes
+// the age of a running container from Created and renders other
+// states without a duration, so a stored value would only duplicate
+// the consuming screen's clock. ID is the full daemon ID — the
+// screen shows the short form — so a future detail view can still
+// match the daemon's own handle.
+type Container struct {
+	ID      string // full daemon ID
+	Name    string // primary name, leading "/" stripped
+	Image   string
+	State   string // running, exited, paused, created, restarting, dead
+	Created time.Time
+}
+
+// ContainerList is one Containers round: every container the local
+// Docker-compatible daemon reports, in daemon order, labeled with
+// the runtime that produced it (ARCHITECTURE.md §4). Runtime is
+// provenance only — "docker" or "podman", derived from the socket
+// the collector reached — so the screen can name the daemon it is
+// reading without the port growing a runtime-specific method set.
+// An empty Containers slice is a legitimate listing — a host with no
+// containers — never an error.
+type ContainerList struct {
+	Runtime    string // "docker" or "podman"
+	Containers []Container
+}
