@@ -100,15 +100,15 @@ func TestPaletteFilterEnterJumpsToModule(t *testing.T) {
 	}
 }
 
-func TestPaletteCursorWrapsAndSelectsLastModule(t *testing.T) {
+func TestPaletteCursorWrapsToContainers(t *testing.T) {
 	m := newPaletteModel(t)
 
-	// The open palette lists all eight modules; up from the first
-	// result wraps to the last (Users), and enter jumps there.
+	// The open palette lists all nine modules; up from the first
+	// result wraps to the last (Containers), and enter jumps there.
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyUp})
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.active != screens.Users {
-		t.Fatalf("up from the first result must wrap to Users, active = %v", m.active)
+	if m.active != screens.Containers {
+		t.Fatalf("up from the first result must wrap to Containers, active = %v", m.active)
 	}
 }
 

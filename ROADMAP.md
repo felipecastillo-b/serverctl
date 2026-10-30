@@ -96,6 +96,7 @@ issue labeled `bug`.
 | Packages | Count only (no per-package listing); pending updates are out of scope (they need elevated tooling or extra dependencies) | by design |
 | Packages | dpkg/rpm adapters are fixture-tested only — no live Debian/RHEL host in the loop | environment |
 | Access | wtmp fallback rows are successful remote logins only; they cannot prove the service was SSH | by design |
+| Containers | Local Docker-compatible unix socket only; lifecycle actions, remote daemons and detail views are out of scope | by design |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
@@ -106,7 +107,7 @@ become one GitHub Issue.
 
 ### M10 — Containers (new module)
 
-- [ ] Read-only Docker/Podman module: container list, state, image, uptime.
+- [x] Read-only Docker/Podman module: container list, state, image, uptime.
       Lifecycle actions explicitly out of scope for the first cut.
 
 ### M11 — Hardware health

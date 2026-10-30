@@ -10,16 +10,16 @@
 
 serverctl is a local-first, single-binary TUI for administering and monitoring Linux
 servers over SSH. Every screen is fully operable by keyboard and mouse. It is
-security-first by design: unprivileged and read-only by default, with every mutating
-action whitelisted and gated behind a confirmation prompt.
+security-first by design: read-only by default with no privilege escalation, and
+every mutating action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
 > **v0.2.1 is released — milestones M0–M8 shipped in v0.1.0, plus the v0.2.0
 > sensor fix and the v0.2.1 hardening batch.** The binary launches the full
 > TUI: dashboard, processes, services and journal logs, storage, network,
-> packages, and access audit, with a command palette, keyboard and mouse
-> control, and dark/light themes. Grab it from the
+> packages, access audit, and containers, with a command palette, keyboard and
+> mouse control, and dark/light themes. Grab it from the
 > [releases page](https://github.com/felipecastillo-b/serverctl/releases) —
 > [ROADMAP.md](ROADMAP.md) tracks what is next.
 
@@ -34,6 +34,7 @@ action whitelisted and gated behind a confirmation prompt.
 - Installed package count via pacman, dpkg or rpm
 - Users and login sessions (logind D-Bus, utmp fallback)
 - SSH login attempt audit (journal, auth log and wtmp fallbacks)
+- Containers: Docker and Podman listings from the local socket, with state, image and uptime
 - Hardware sensors via hwmon, ordered by dashboard usefulness
 
 ## Requirements

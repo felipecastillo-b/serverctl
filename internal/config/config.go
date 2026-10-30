@@ -35,6 +35,7 @@ const (
 	IntervalPackages          = "packages"
 	IntervalUsersSessions     = "users.sessions"
 	IntervalUsersAttempts     = "users.attempts"
+	IntervalContainers        = "containers"
 )
 
 // Config holds every user-tunable setting of serverctl.
@@ -75,6 +76,7 @@ func DefaultIntervals() map[string]int {
 		IntervalPackages:          30,
 		IntervalUsersSessions:     10,
 		IntervalUsersAttempts:     30,
+		IntervalContainers:        10,
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 // screens, and the message contract must not create an import cycle.
 type RefreshMsg time.Time
 
-// Cadences carries the refresh intervals of the eight self-ticked
+// Cadences carries the refresh intervals of the nine self-ticked
 // collection chains of ARCHITECTURE.md §3 from the config layer to
 // the screen constructors. All() is the injection point: the app
 // resolves the configured intervals into this struct so the screens
@@ -39,6 +39,7 @@ type Cadences struct {
 	Packages          time.Duration
 	UsersSessions     time.Duration
 	UsersAttempts     time.Duration
+	Containers        time.Duration
 }
 
 // DefaultCadences returns the built-in per-chain intervals, the §3
@@ -54,6 +55,7 @@ func DefaultCadences() Cadences {
 		Packages:          defaultPackagesInterval,
 		UsersSessions:     defaultSessionsInterval,
 		UsersAttempts:     defaultAttemptsInterval,
+		Containers:        defaultContainersInterval,
 	}
 }
 
@@ -79,6 +81,7 @@ const (
 	Network
 	Packages
 	Users
+	Containers
 )
 
 // Screen is a module view hosted by the root model. The shell owns layout
@@ -111,9 +114,10 @@ type Screen interface {
 // live collectors.System and the given cadences: the dashboard
 // (system overview), processes, services (systemd units), logs
 // (journal tail), storage (mounts and disks), network (interfaces
-// and sockets), packages (installed count) and users (login sessions
-// and SSH attempts). A module whose milestone has not landed yet
-// would keep its catalog stub; with m6b all eight are live.
+// and sockets), packages (installed count), users (login sessions
+// and SSH attempts) and containers (local Docker/Podman daemon
+// listing). A module whose milestone has not landed yet
+// would keep its catalog stub; with m10d all nine are live.
 //
 // All() is the intervals injection point of ARCHITECTURE.md §3: the
 // app resolves the config's `intervals` section into cad, and each
@@ -156,6 +160,10 @@ func All(th theme.Theme, sys collectors.System, cad Cadences) []Screen {
 			// core.SSHAttemptLister over the sshd unit's journal
 			// (m6b). Both chain intervals: sessions and attempts.
 			out[i] = NewAccess(sys, sys, th, cad.UsersSessions, cad.UsersAttempts)
+		case Containers:
+			// collectors.System implements core.ContainerLister over
+			// the local Docker-compatible unix socket (m10b).
+			out[i] = NewContainers(sys, th, cad.Containers)
 		default:
 			out[i] = s
 		}

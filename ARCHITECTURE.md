@@ -43,7 +43,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Entrypoint | CLI flags, config load, process wiring | `cmd/serverctl` |
 | Config | YAML config: theme (dark/light), keybindings, refresh interval | `internal/config` |
 | Core | Domain models, module registry, collector/action interfaces (ports) | `internal/core` |
-| Collectors | Read-only adapters: procfs (`/proc`), sysfs/hwmon (`/sys`), systemd via D-Bus (`go-systemd`), journal (`sdjournal`), pacman local database (package count), login records (`/var/log/wtmp`, `lastlog`) | `internal/collectors` |
+| Collectors | Read-only adapters: procfs (`/proc`), sysfs/hwmon (`/sys`), systemd via D-Bus (`go-systemd`), journal (`sdjournal`), pacman local database (package count), login records (`/var/log/wtmp`, `lastlog`), Docker-compatible Engine API over the local unix socket (containers) | `internal/collectors` |
 | Actions | **Only layer allowed to mutate**: whitelisted service start/stop/restart via D-Bus and process signals, each gated by confirmation | `internal/actions` |
 | UI | Bubble Tea root model, screen router, sidebar, reusable components (table, modal, palette, help overlay), themes, keymap | `internal/ui` |
 
@@ -61,6 +61,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Packages | pacman local database (installed count; other distros post-MVP) | 30 s self-tick (config `intervals.packages`) |
 | Users / sessions | logind D-Bus (utmp file fallback) | 10 s default (config `intervals.users.sessions`) |
 | SSH audit | journal of the sshd process family (auth log, wtmp fallbacks) | 30 s default (config `intervals.users.attempts`) |
+| Containers | Docker-compatible Engine API over a local unix socket; rootless Podman/Docker sockets before system-wide ones | 10 s default (config `intervals.containers`) |
 | Sensors | `/sys/class/hwmon` | each dashboard round (`refresh_seconds`) |
 | System info | `/proc/cpuinfo`, `uname`, DMI sysfs | each dashboard round (`refresh_seconds`) |
 

@@ -18,7 +18,7 @@ import (
 //
 // An empty pattern matches any text with score 0. The scan is greedy
 // left-to-right: it takes the earliest match for every rune instead of
-// searching for the optimal alignment, which is plenty to rank eight
+// searching for the optimal alignment, which is plenty to rank nine
 // module titles.
 func Score(pattern, text string) (int, bool) {
 	pat := []rune(strings.ToLower(pattern))

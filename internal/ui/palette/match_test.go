@@ -6,7 +6,7 @@ import "testing"
 // matcher is pure and must not depend on the screens package.
 var catalogTitles = []string{
 	"Dashboard", "Processes", "Services", "Logs",
-	"Storage", "Network", "Packages", "Users",
+	"Storage", "Network", "Packages", "Users", "Containers",
 }
 
 func TestScore(t *testing.T) {
@@ -65,10 +65,10 @@ func TestSearchRanking(t *testing.T) {
 		pattern string
 		want    []int
 	}{
-		{"empty pattern keeps full catalog order", "", []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		// "s" prefixes Services and Storage (score 5), matches five
+		{"empty pattern keeps full catalog order", "", []int{0, 1, 2, 3, 4, 5, 6, 7, 8}},
+		// "s" prefixes Services and Storage (score 5), matches six
 		// more titles with score 1 in catalog order, and drops Network.
-		{"single rune ranks prefixes first", "s", []int{2, 4, 0, 1, 3, 6, 7}},
+		{"single rune ranks prefixes first", "s", []int{2, 4, 0, 1, 3, 6, 7, 8}},
 		{"unique fragment matches one module", "proc", []int{1}},
 		{"unmatched pattern returns no results", "zzz", nil},
 	}
