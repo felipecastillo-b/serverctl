@@ -317,12 +317,12 @@ func TestAccessErrorPersistsPerView(t *testing.T) {
 	}
 }
 
-// TestAccessEmptyAttemptsExplainsVisibility pins the unprivileged
-// reality's status line: a zero-attempts round carries journald's
-// access-model hint — an empty sshd window is most often a reader
-// outside the systemd-journal group, not a quiet sshd (probed live;
-// core.SSHAttempt documents the access model).
-func TestAccessEmptyAttemptsExplainsVisibility(t *testing.T) {
+// TestAccessEmptyAttemptsShowsSourceHint pins the empty-state status
+// line: a zero-attempts round names the sources the chain tried —
+// journal, auth log, wtmp — instead of assuming journald visibility is
+// the only cause: the file fallbacks exist precisely for hosts and
+// readers the journal does not serve.
+func TestAccessEmptyAttemptsShowsSourceHint(t *testing.T) {
 	s := newAccessScreen(t, &fakeSessionLister{sessions: sessionsFixture}, &fakeAttemptLister{})
 	updated, _, _ := s.UpdateKey(keyMsg("v"))
 	s = updated.(*access)
@@ -330,8 +330,8 @@ func TestAccessEmptyAttemptsExplainsVisibility(t *testing.T) {
 	if !strings.Contains(out, "0 attempts · 0 failed") {
 		t.Errorf("empty attempts must render their count summary:\n%s", out)
 	}
-	if !strings.Contains(out, "systemd-journal group membership") {
-		t.Errorf("empty attempts must explain journald's access model:\n%s", out)
+	if !strings.Contains(out, "no SSH attempts in journal, auth log or wtmp") {
+		t.Errorf("empty attempts must name the sources the chain tried:\n%s", out)
 	}
 }
 

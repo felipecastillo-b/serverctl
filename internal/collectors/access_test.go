@@ -326,12 +326,128 @@ func TestParseSSHAttemptLineOnSample(t *testing.T) {
 	}
 }
 
-// TestAttemptsRefuseOnFixtureSystem pins the live-only guard the M4c
-// journal machinery enforces: a System rooted at fixtures must refuse
-// SSH attempt reads rather than touch any journal — like Tail and
-// After, the journal has no root-prefix fixtures to read from.
-func TestAttemptsRefuseOnFixtureSystem(t *testing.T) {
+// writeUnderRoot writes data at root/rel, creating parent directories.
+func writeUnderRoot(t *testing.T, root, rel string, data []byte) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create parents of %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+}
+
+// TestAttemptsFallbackFromAuthLog drives the public Attempts chain end
+// to end on a fixture root: a non-live System skips the journal (no
+// root-prefix journal fixtures exist), reads auth.log under the root,
+// and returns its attempts newest first with both verdicts.
+func TestAttemptsFallbackFromAuthLog(t *testing.T) {
+	root := t.TempDir()
+	writeUnderRoot(t, root, "var/log/auth.log", []byte(strings.Join([]string{
+		"Oct  9 12:00:00 server sshd[1]: Accepted publickey for alice from 192.168.1.50 port 51422 ssh2",
+		"Oct  9 13:49:30 server sshd[2]: Failed password for invalid user admin from 203.0.113.7 port 41002 ssh2",
+		"",
+	}, "\n")))
+
+	attempts, err := collectors.New(root).Attempts()
+	if err != nil {
+		t.Fatalf("Attempts: %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("Attempts = %d attempts, want 2: %+v", len(attempts), attempts)
+	}
+	if got := attempts[0]; got.User != "admin" || got.SourceIP != "203.0.113.7" || got.Success {
+		t.Errorf("newest attempt = %+v, want admin/203.0.113.7/failed", got)
+	}
+	if got := attempts[1]; got.User != "alice" || got.SourceIP != "192.168.1.50" || !got.Success {
+		t.Errorf("older attempt = %+v, want alice/192.168.1.50/accepted", got)
+	}
+}
+
+// TestAttemptsFallbackFromSecureLog pins the Red Hat spelling: with no
+// auth.log, the chain reads var/log/secure.
+func TestAttemptsFallbackFromSecureLog(t *testing.T) {
+	root := t.TempDir()
+	writeUnderRoot(t, root, "var/log/secure", []byte(
+		"Oct  9 13:49:30 server sshd[2]: Failed password for root from 203.0.113.7 port 41000 ssh2\n"))
+
+	attempts, err := collectors.New(root).Attempts()
+	if err != nil {
+		t.Fatalf("Attempts: %v", err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("Attempts = %d attempts, want 1: %+v", len(attempts), attempts)
+	}
+	if got := attempts[0]; got.User != "root" || got.SourceIP != "203.0.113.7" || got.Success {
+		t.Errorf("attempt = %+v, want root/203.0.113.7/failed", got)
+	}
+}
+
+// TestAttemptsFallbackFromWtmp pins the last resort: with no auth log,
+// wtmp supplies best-effort successful remote logins — USER_PROCESS
+// records with a non-empty host — and local or bookkeeping records stay
+// out.
+func TestAttemptsFallbackFromWtmp(t *testing.T) {
+	root := t.TempDir()
+	writeUnderRoot(t, root, "var/log/wtmp", bytes.Join([][]byte{
+		utmpRecord(2, 0, "~", "~~", "reboot", "6.1.0", 1791560000, 0),
+		utmpRecord(7, 900, "pts/0", "ts/0", "alice", "192.168.1.50", 1791561004, 0),
+		utmpRecord(7, 901, "tty7", ":0", "seat", "", 1791561064, 0),
+	}, nil))
+
+	attempts, err := collectors.New(root).Attempts()
+	if err != nil {
+		t.Fatalf("Attempts: %v", err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("Attempts = %d attempts, want 1: %+v", len(attempts), attempts)
+	}
+	want := core.SSHAttempt{Time: time.Unix(1791561004, 0), User: "alice", SourceIP: "192.168.1.50", Success: true}
+	if attempts[0] != want {
+		t.Errorf("attempt = %+v, want %+v", attempts[0], want)
+	}
+}
+
+// TestAttemptsEmptyAuthLogStopsChain pins the error-only fallback
+// policy end to end: a readable auth log with no attempts is an
+// authoritative empty listing, so a wtmp holding rows is NOT consulted.
+func TestAttemptsEmptyAuthLogStopsChain(t *testing.T) {
+	root := t.TempDir()
+	writeUnderRoot(t, root, "var/log/auth.log", nil)
+	writeUnderRoot(t, root, "var/log/wtmp", utmpRecord(
+		7, 900, "pts/0", "ts/0", "alice", "192.168.1.50", 1791561004, 0))
+
+	attempts, err := collectors.New(root).Attempts()
+	if err != nil {
+		t.Fatalf("Attempts: %v", err)
+	}
+	if len(attempts) != 0 {
+		t.Errorf("Attempts = %d attempts, want the empty auth log to win: %+v", len(attempts), attempts)
+	}
+}
+
+// TestAttemptsWithoutSourcesErrors pins the all-sources-fail shape: a
+// root without any attempt source errors and names both file paths, so
+// the screen can say which sources the collector tried.
+func TestAttemptsWithoutSourcesErrors(t *testing.T) {
+	_, err := collectors.New(t.TempDir()).Attempts()
+	if err == nil {
+		t.Fatal("a root with no attempt sources must error")
+	}
+	for _, want := range []string{"auth.log", "secure", "wtmp"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should name %q", err, want)
+		}
+	}
+}
+
+// TestAttemptsOnFixtureSystemWithoutFilesErrors keeps the shared
+// fixture root honest: testdata has no journal, auth log or wtmp, and a
+// non-live System must never fall through to the test runner's own
+// files.
+func TestAttemptsOnFixtureSystemWithoutFilesErrors(t *testing.T) {
 	if _, err := collectors.New("testdata").Attempts(); err == nil {
-		t.Fatal("a fixture System must refuse journal attempt reads, not touch the host journal")
+		t.Fatal("a fixture System without attempt files must error, not read the host")
 	}
 }

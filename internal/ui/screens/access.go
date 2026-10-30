@@ -472,14 +472,15 @@ func (s *access) View(width, height int) string {
 // muted collecting state until the first round lands, else the view's
 // summary. Each view reads its own half's state — a failed sessions
 // round never blanks the attempts listing (§5). A zero-attempts round
-// appends journald's access-model hint: the common cause is
-// unprivileged visibility — a reader outside the systemd-journal (or
-// adm) group sees only their own session's entries (probed live: as a
-// wheel-only user the sshd unit match returns zero entries with NO
-// error) — and a reader with group membership but a quiet sshd sees
-// the same hint, the imprecision the logs screen accepts for its empty
-// buffer. The failed count wears danger when failures exist, muted at
-// zero — the services screen's callout rule.
+// appends a source hint: the attempts chain reads the journal, then
+// auth.log/secure, then wtmp — so an empty listing on a busy host
+// usually means the reader cannot see the journal (a reader outside
+// the systemd-journal or adm group sees only their own session's
+// entries, probed live with NO error) or the host records auth
+// somewhere else. A quiet host sees the same hint, the imprecision the
+// logs screen accepts for its empty buffer. The failed count wears
+// danger when failures exist, muted at zero — the services screen's
+// callout rule.
 func (s *access) statusLine(muted, danger lipgloss.Style) string {
 	if s.view == accessAttempts {
 		if s.attemptsErr != nil {
@@ -505,7 +506,7 @@ func (s *access) statusLine(muted, danger lipgloss.Style) string {
 			failedNote,
 		}
 		if len(s.attemptsList) == 0 {
-			parts = append(parts, muted.Render("sshd journal needs systemd-journal group membership"))
+			parts = append(parts, muted.Render("no SSH attempts in journal, auth log or wtmp"))
 		}
 		return strings.Join(parts, " · ")
 	}
