@@ -2,7 +2,7 @@
 # Upstream: https://github.com/felipecastillo-b/serverctl
 
 pkgname=serverctl
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Local-first, single-binary TUI for Linux server administration and monitoring over SSH'
 arch=('x86_64' 'aarch64')
@@ -15,9 +15,10 @@ depends=('systemd-libs')
 makedepends=('go' 'systemd-libs')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/felipecastillo-b/serverctl/archive/refs/tags/v$pkgver.tar.gz")
 
-# PLACEHOLDER — fill from the v0.1.0 source tarball at AUR publish
-# time, right after the v0.1.0 tag exists:
-#   sha256sum serverctl-0.1.0.tar.gz
+# PLACEHOLDER — AUR registrations are currently disabled, so this file stays
+# parked. Fill the checksums from the v0.2.0 source tarball when publication
+# unblocks:
+#   sha256sum serverctl-0.2.0.tar.gz
 # The all-zeros value is deliberately invalid so a forgotten update
 # fails the build instead of shipping an unverified source.
 sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')

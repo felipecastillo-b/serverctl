@@ -203,7 +203,7 @@ func (d *dashboard) View(width, height int) string {
 // stands alone. An empty note means the section is fresh.
 func (d *dashboard) sectionNote(section string, muted, danger lipgloss.Style) (note string, showValues bool) {
 	if err, failed := d.errs[section]; failed {
-		note = danger.Render(fmt.Sprintf("n/a (%v)", err))
+		note = danger.Render(statusErrorText(err))
 		if good, ok := d.lastGood[section]; ok {
 			return note + " " + muted.Render(staleSince(good)), true
 		}

@@ -5,7 +5,6 @@ package app
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -315,17 +314,54 @@ func (m Model) headerView() string {
 }
 
 // footerView renders the bottom bar: a compact join of the global
-// keybindings as "key description" pairs.
+// keybindings as "key description" pairs. Hints are fitted whole; the
+// MaxWidth stays only as a belt-and-suspenders no-op after the fitter.
 func (m Model) footerView() string {
-	parts := make([]string, 0, len(m.keys.Bindings()))
-	for _, binding := range m.keys.Bindings() {
+	bindings := m.keys.Bindings()
+	parts := make([]string, 0, len(bindings))
+	for _, binding := range bindings {
 		h := binding.Help()
 		parts = append(parts, h.Key+" "+h.Desc)
 	}
-	// MaxWidth truncates the hints at the terminal edge; Width is avoided
-	// on purpose because it wraps long content instead of truncating it.
 	return lipgloss.NewStyle().
 		Foreground(m.theme.Muted).
 		MaxWidth(m.width).
-		Render(" " + strings.Join(parts, "  ·  "))
+		Render(fitFooterHints(parts, m.width))
+}
+
+// footerSep separates footer hints. Hints are atomic to the fitter, so
+// this separator only ever appears between two whole hints.
+const footerSep = "  ·  "
+
+// fitFooterHints greedily joins whole hint parts with footerSep into a
+// footer line that fits width display columns. The width contract
+// includes the line's leading space (the footer bar's left padding) and
+// every separator: lipgloss.Width(result) <= width always holds. The
+// result carries no trailing separator.
+//
+// Hints are kept whole because the shell truncates entire lines at the
+// terminal edge: clipping a joined line cuts the last hint mid-word.
+// Parts are added in order until the first one that does not fit, which
+// ends the fit — later hints are dropped whole rather than skipped,
+// keeping the footer's stable key order free of misleading gaps. When
+// width is zero, or cannot hold the leading space plus the first hint,
+// the footer renders empty.
+func fitFooterHints(parts []string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line := ""
+	fitted := false
+	for _, part := range parts {
+		candidate := " " + part
+		if fitted {
+			candidate = line + footerSep + part
+		}
+		if lipgloss.Width(candidate) > width {
+			break
+		}
+		line = candidate
+		fitted = true
+	}
+	return line
 }

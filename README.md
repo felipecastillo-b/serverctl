@@ -15,8 +15,9 @@ action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
-> **v0.1.0 is released — milestones M0–M8 complete.** The binary launches the
-> full TUI: dashboard, processes, services and journal logs, storage, network,
+> **v0.2.1 is released — milestones M0–M8 shipped in v0.1.0, plus the v0.2.0
+> sensor fix and the v0.2.1 hardening batch.** The binary launches the full
+> TUI: dashboard, processes, services and journal logs, storage, network,
 > packages, and access audit, with a command palette, keyboard and mouse
 > control, and dark/light themes. Grab it from the
 > [releases page](https://github.com/felipecastillo-b/serverctl/releases) —
@@ -33,7 +34,7 @@ action whitelisted and gated behind a confirmation prompt.
 - Installed package count via pacman's local database (other distros planned)
 - Users and login sessions
 - SSH login attempt audit
-- Hardware sensors via hwmon
+- Hardware sensors via hwmon, ordered by dashboard usefulness
 
 ## Requirements
 
@@ -60,10 +61,6 @@ git clone https://github.com/felipecastillo-b/serverctl.git
 cd serverctl
 make build        # produces bin/serverctl
 ```
-
-**Arch Linux, from the AUR — coming soon.** The source-based
-[PKGBUILD](packaging/aur/PKGBUILD) already lives in this repository; publishing
-it to the AUR is planned.
 
 **Other distributions — coming soon.** Today the packages screen counts through
 pacman's local database, so Arch Linux is the verified platform; multi-distro
@@ -110,7 +107,7 @@ Then add your user to the group: `usermod -aG serverctl $USER`.
 | Document | Contents |
 |----------|----------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, modules, data sources, security model, testing strategy |
-| [ROADMAP.md](ROADMAP.md) | Milestones M0–M8, MVP and v0.1.0 cuts |
+| [ROADMAP.md](ROADMAP.md) | Delivered milestones, release policy, known limitations and proposed roadmap |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Workflow, commit conventions, quality and security gates |
 
 ## Development
