@@ -238,13 +238,16 @@ type PackageCount struct {
 // UserSession is one logged-in session as the Users screen's
 // sessions view lists it (ARCHITECTURE.md §4): the account, the
 // terminal the session runs on, where it logged in from, and when.
-// Sessions come from utmp's USER_PROCESS records — the file's own
-// bookkeeping rows (boot marker, login prompts, dead processes) are
-// collector territory and never reach the model, and a session that
-// ends between two rounds simply disappears from the next listing.
+// Sessions come from the collector's login-session source — logind
+// D-Bus, or utmp's USER_PROCESS records as the fallback; each
+// adapter's own bookkeeping rows (boot markers, login prompts, dead
+// processes) are collector territory and never reach the model, and
+// a session that ends between two rounds simply disappears from the
+// next listing.
 //
-// From carries utmp's host field verbatim, and its local shapes are
-// worth knowing before reading it as "network login": a seat login
+// From carries the source's host field verbatim — logind's
+// RemoteHost, utmp's host field — and its local shapes are worth
+// knowing before reading it as "network login": a seat login
 // through a display manager carries the X display name where a
 // hostname would be (observed live on this Arch host: `who` prints
 // the tty7 session as "(:0)", the parser reads ":0"), and a console

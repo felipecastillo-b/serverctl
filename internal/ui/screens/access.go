@@ -364,9 +364,9 @@ func indexOfAttempt(attempts []core.SSHAttempt, keep core.SSHAttempt) int {
 }
 
 // sessionRowsFor renders sessions as table rows, clipped to their
-// column widths. FROM passes utmp's host field through — ":0" seat
-// logins and remote hosts alike, core.UserSession documents the
-// shapes.
+// column widths. FROM passes the source's host field through —
+// logind's RemoteHost or utmp's host field — ":0" seat logins and
+// remote hosts alike, core.UserSession documents the shapes.
 func sessionRowsFor(sessions []core.UserSession, width int) []table.Row {
 	cols := sessionsColumnsFor(width)
 	rows := make([]table.Row, 0, len(sessions))
@@ -516,5 +516,5 @@ func (s *access) statusLine(muted, danger lipgloss.Style) string {
 	if !s.sessionsLoaded {
 		return loadingStatus(muted)
 	}
-	return muted.Render(fmt.Sprintf("%d sessions · utmp", len(s.sessionsList)))
+	return muted.Render(fmt.Sprintf("%d sessions", len(s.sessionsList)))
 }

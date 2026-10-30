@@ -59,7 +59,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Network | `/proc/net/dev`, sysfs | 2 s default (config `intervals.network.interfaces`) |
 | Ports / connections | `/proc/net/{tcp,tcp6,udp,udp6,unix}` | 5 s default (config `intervals.network.sockets`) |
 | Packages | pacman local database (installed count; other distros post-MVP) | 30 s self-tick (config `intervals.packages`) |
-| Users / sessions | utmp, logind D-Bus | 10 s default (config `intervals.users.sessions`) |
+| Users / sessions | logind D-Bus (utmp file fallback) | 10 s default (config `intervals.users.sessions`) |
 | SSH audit | `/var/log/wtmp`, journal of `sshd` | 30 s default (config `intervals.users.attempts`) |
 | Sensors | `/sys/class/hwmon` | each dashboard round (`refresh_seconds`) |
 | System info | `/proc/cpuinfo`, `uname`, DMI sysfs | each dashboard round (`refresh_seconds`) |
@@ -198,7 +198,7 @@ Prefer kernel interfaces over shelling out. When a command is unavoidable (the `
 | Installed package count (pacman) | pacman local database directory (`/var/lib/pacman/local`) | `pacman -Qq` (fixed argv, timeout) |
 | Installed package count (dpkg) | dpkg package database (`/var/lib/dpkg/status`) | — |
 | Installed package count (rpm) | `rpm -qa` (fixed argv, timeout; rpm has no text database) | — |
-| Users / sessions | utmp file, logind D-Bus | `lastlog` file |
+| Users / sessions | logind D-Bus | utmp file |
 | SSH attempts | `wtmp`, journal of `sshd` unit | auth log parsing |
 
 ## 9. Key dependencies

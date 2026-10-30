@@ -152,9 +152,9 @@ func All(th theme.Theme, sys collectors.System, cad Cadences) []Screen {
 			out[i] = NewPackages(sys, th, cad.Packages)
 		case Users:
 			// collectors.System implements core.SessionLister over
-			// the utmp file and core.SSHAttemptLister over the sshd
-			// unit's journal (m6b). Both chain intervals: sessions
-			// and attempts.
+			// logind D-Bus with a utmp fallback, and
+			// core.SSHAttemptLister over the sshd unit's journal
+			// (m6b). Both chain intervals: sessions and attempts.
 			out[i] = NewAccess(sys, sys, th, cad.UsersSessions, cad.UsersAttempts)
 		default:
 			out[i] = s

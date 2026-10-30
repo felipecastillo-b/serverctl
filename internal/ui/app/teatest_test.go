@@ -315,7 +315,7 @@ func newUsersTestModel(t *testing.T) *teatest.TestModel {
 // TestUsersScreenSessionsBootsAndRenders smoke-tests m6b's sessions
 // view end to end in a live pty: tab seven times into the users
 // module, wait until the fake port's round flowed through collect →
-// route → table (the status line only renders its "sessions ·"
+// route → table (the status line only renders its "2 sessions"
 // summary after the first sessions round lands), then quit. The ports
 // are fakes because CI's Ubuntu runners promise no deterministic
 // utmp content — an empty or absent /run/utmp is normal there — so
@@ -337,7 +337,7 @@ func TestUsersScreenSessionsBootsAndRenders(t *testing.T) {
 	// One WaitFor only: it consumes the output stream, and the renderer
 	// skips unchanged lines (see TestShellBootsAndQuits).
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return bytes.Contains(bts, []byte("sessions ·"))
+		return bytes.Contains(bts, []byte("2 sessions"))
 	}, teatest.WithDuration(10*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})

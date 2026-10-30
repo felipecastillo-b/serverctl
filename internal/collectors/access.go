@@ -1,9 +1,10 @@
 // access.go reads the "Users / sessions" and "SSH attempts" rows of
-// ARCHITECTURE.md §8: the utmp file for login sessions and the sshd
-// unit's journal for SSH attempts. Both parsers are pure — bytes or
-// lines in, domain models out — so the binary format and the log
-// grammar are table-tested against crafted records without a live
-// host (§10).
+// ARCHITECTURE.md §8: logind D-Bus for login sessions, with the utmp
+// file as its fallback (access_logind.go holds the D-Bus half), and
+// the sshd unit's journal for SSH attempts. Both parsers are pure —
+// bytes or lines in, domain models out — so the binary format and
+// the log grammar are table-tested against crafted records without a
+// live host (§10).
 package collectors
 
 import (
@@ -104,15 +105,44 @@ func utmpString(raw []byte) string {
 	return string(raw)
 }
 
-// Sessions implements core.SessionLister over the utmp file
-// (ARCHITECTURE.md §8, row "Users / sessions"). The file is a plain
-// read through the root prefix, so fixture roots stay hermetic and
-// the live guard never applies; logind D-Bus — §8's preferred
-// source — is the post-MVP adapter this port already fits. A
-// missing or unreadable utmp (a container without login accounting,
-// a non-utmp init) is an error the sessions view degrades on (§5);
-// a readable file with no sessions is a legitimate empty listing.
+// Sessions implements core.SessionLister over the host's login
+// sessions (ARCHITECTURE.md §8, row "Users / sessions"). A live
+// System reads logind over D-Bus — the preferred source, because it
+// is the login manager's own registry rather than a file parse — and
+// falls back to the utmp file on ANY logind error: a host without a
+// bus, a container without logind, a permission the bus refuses. The
+// fallback is error-driven, never emptiness-driven: an empty logind
+// listing is a legitimate "nobody is logged in" answer, exactly as a
+// readable utmp with no USER_PROCESS records is.
+//
+// A fixture System stays on utmp only: D-Bus has no root-prefix
+// fixtures, so the bus is never dialed under a test root and the
+// golden listing stays hermetic. When both sources fail, the error
+// carries both causes — the utmp failure wrapped, the logind failure
+// in the message — so the sessions view (§5) shows which paths the
+// collector tried.
 func (s System) Sessions() ([]core.UserSession, error) {
+	if !s.IsLive() {
+		return s.utmpSessions()
+	}
+	sessions, logindErr := s.logindSessions()
+	if logindErr == nil {
+		return sessions, nil
+	}
+	sessions, utmpErr := s.utmpSessions()
+	if utmpErr == nil {
+		return sessions, nil
+	}
+	return nil, fmt.Errorf("collectors: sessions: logind unavailable (%v) and utmp fallback failed: %w", logindErr, utmpErr)
+}
+
+// utmpSessions implements the utmp fallback of Sessions. The file is
+// a plain read through the root prefix, so fixture roots stay
+// hermetic and the live guard never applies. A missing or unreadable
+// utmp (a container without login accounting, a non-utmp init) is an
+// error the sessions view degrades on (§5); a readable file with no
+// sessions is a legitimate empty listing.
+func (s System) utmpSessions() ([]core.UserSession, error) {
 	data, err := os.ReadFile(s.rootPath(utmpPath))
 	if err != nil {
 		return nil, fmt.Errorf("read utmp: %w", err)

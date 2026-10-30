@@ -32,7 +32,7 @@ action whitelisted and gated behind a confirmation prompt.
 - Network interfaces and live traffic
 - Listening ports and active connections
 - Installed package count via pacman, dpkg or rpm
-- Users and login sessions
+- Users and login sessions (logind D-Bus, utmp fallback)
 - SSH login attempt audit
 - Hardware sensors via hwmon, ordered by dashboard usefulness
 

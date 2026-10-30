@@ -119,17 +119,18 @@ type PackageCounter interface {
 
 // SessionLister is the Users module's sessions read port: the
 // host's current login sessions. collectors.System implements it
-// over the utmp file (ARCHITECTURE.md §3, §8) — logind D-Bus, the
-// preferred source, is the post-MVP adapter; the exact row policy,
-// which utmp record types count as a session, is collector
-// territory and lives in the implementer's doc comment, as with
-// UnitLister. The port is source-agnostic by construction: nothing
-// utmp-shaped leaks into the contract, so the logind adapter can
-// replace the file reader without this contract or the screen
-// changing.
+// over logind D-Bus (ARCHITECTURE.md §3, §8), with the utmp file as
+// the fallback whenever the bus read fails; fixture Systems stay on
+// utmp only, because D-Bus has no root-prefix fixtures. The exact
+// row policy — which logind sessions and utmp record types count as
+// a session — is collector territory and lives in the implementer's
+// doc comment, as with UnitLister. The port is source-agnostic by
+// construction: nothing utmp-shaped or bus-shaped leaks into the
+// contract, so either adapter can change without this contract or
+// the screen changing.
 type SessionLister interface {
 	// Sessions returns the current login sessions, in login order
-	// — utmp file order, oldest login first.
+	// — oldest login first.
 	Sessions() ([]UserSession, error)
 }
 
