@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -149,6 +150,38 @@ func TestSessionsOnFixture(t *testing.T) {
 		if !got.LoginAt.Equal(w.loginAt) {
 			t.Errorf("session %d LoginAt = %v, want %v", i, got.LoginAt, w.loginAt)
 		}
+	}
+}
+
+// TestSessionsOnFixtureReadsUtmpOnly pins the fixture dispatch: a
+// System rooted at a fixture directory serves Sessions from that
+// root's utmp file and never reaches logind — the bus is live-only,
+// so a leaked dial would return the test runner's sessions (or fail)
+// instead of this crafted row. Hermetic proof that the fallback is
+// also the fixture path.
+func TestSessionsOnFixtureReadsUtmpOnly(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "run"), 0o755); err != nil {
+		t.Fatalf("create fixture run dir: %v", err)
+	}
+	record := utmpRecord(7, 4242, "pts/7", "ts/7", "fixture-only", "198.51.100.20", 1791562000, 500000)
+	if err := os.WriteFile(filepath.Join(root, "run", "utmp"), record, 0o644); err != nil {
+		t.Fatalf("write fixture utmp: %v", err)
+	}
+
+	sessions, err := collectors.New(root).Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("Sessions = %d sessions, want 1: %+v", len(sessions), sessions)
+	}
+	got := sessions[0]
+	if got.User != "fixture-only" || got.TTY != "pts/7" || got.From != "198.51.100.20" {
+		t.Errorf("session = %+v, want the fixture record", got)
+	}
+	if want := time.Unix(1791562000, 500000000); !got.LoginAt.Equal(want) {
+		t.Errorf("LoginAt = %v, want %v", got.LoginAt, want)
 	}
 }
 

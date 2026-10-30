@@ -118,9 +118,8 @@ func newAccessScreen(t *testing.T, sessions *fakeSessionLister, attempts *fakeAt
 
 // TestAccessRendersSessionsView pins the sessions listing: every
 // column renders, rows show the fixture sessions with their From
-// shapes, and the status line carries the count with the utmp source
-// label. The attempts half of the rounds stays out of this view's
-// table.
+// shapes, and the status line carries the source-agnostic count. The
+// attempts half of the rounds stays out of this view's table.
 func TestAccessRendersSessionsView(t *testing.T) {
 	s := newAccessScreen(t,
 		&fakeSessionLister{sessions: sessionsFixture},
@@ -132,7 +131,7 @@ func TestAccessRendersSessionsView(t *testing.T) {
 		"alice", "pts/0", "192.168.1.50",
 		"bob", "remote.example.com",
 		"Oct 09 12:50:04", // alice's login, rendered from her timezone-fixed instant
-		"3 sessions · utmp",
+		"3 sessions",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view missing %q:\n%s", want, view)
@@ -183,7 +182,7 @@ func TestAccessViewCyclesWithV(t *testing.T) {
 	if !handled || s.view != accessSessions {
 		t.Fatal("'v' must cycle back to the sessions view")
 	}
-	if !strings.Contains(s.View(100, 24), "3 sessions · utmp") {
+	if !strings.Contains(s.View(100, 24), "3 sessions") {
 		t.Errorf("cycling back must re-render the sessions:\n%s", s.View(100, 24))
 	}
 	if sessions.calls != 1 || attempts.calls != 1 {
@@ -307,7 +306,7 @@ func TestAccessErrorPersistsPerView(t *testing.T) {
 	updated, _ = s.Update(s.collectAttempts()())
 	s = updated.(*access)
 	out = s.View(100, 24) // sessions view active
-	if !strings.Contains(out, "3 sessions · utmp") {
+	if !strings.Contains(out, "3 sessions") {
 		t.Errorf("sessions view must keep its good listing under an attempts failure:\n%s", out)
 	}
 	updated, _, _ = s.UpdateKey(keyMsg("v"))
