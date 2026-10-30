@@ -15,11 +15,12 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
-> **v0.2.1 is released — milestones M0–M8 shipped in v0.1.0, plus the v0.2.0
-> sensor fix and the v0.2.1 hardening batch.** The binary launches the full
-> TUI: dashboard, processes, services and journal logs, storage, network,
-> packages, access audit, and containers, with a command palette, keyboard and
-> mouse control, and dark/light themes. Grab it from the
+> **v0.4.0 is released — milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed
+> sensor detection; v0.2.1 hardened the release pipeline and UI; v0.3.0 added
+> portability; v0.4.0 added containers.** The binary launches the full TUI:
+> dashboard, processes, services and journal logs, storage, network, packages,
+> access audit, and containers, with a command palette, keyboard and mouse
+> control, and dark/light themes. Grab it from the
 > [releases page](https://github.com/felipecastillo-b/serverctl/releases) —
 > [ROADMAP.md](ROADMAP.md) tracks what is next.
 
