@@ -1,11 +1,12 @@
 # serverctl Roadmap
 
-**Current release: [v0.2.1](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.2.1) (2026-10-29).**
+**Current release: [v0.3.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.3.0) (2026-10-30).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
-added usefulness ordering; v0.2.1 delivered the M9 hardening batch. This
-document covers what is delivered, how work flows, the live bug queue, and the
-proposed milestones ahead. Everything under "Proposed milestones" is a proposal
-— the maintainer prunes, splits, or reorders.
+added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
+delivered M10 portability. This document covers what is delivered, how work
+flows, the live bug queue, and the proposed milestones ahead. Everything under
+"Proposed milestones" is a proposal — the maintainer prunes, splits, or
+reorders.
 
 ## 1. How we work
 
@@ -18,8 +19,8 @@ proposed milestones ahead. Everything under "Proposed milestones" is a proposal
 
 ### Release policy (0.x)
 
-- Bug-fix-only batches tag patch releases: `v0.2.1`, `v0.2.2`, ...
-- The first new feature or visible behavior change bumps MINOR: `v0.3.0`.
+- Bug-fix-only batches tag patch releases: `v0.3.1`, `v0.3.2`, ...
+- The first new feature or visible behavior change bumps MINOR: `v0.4.0`.
 - Docs-only changes ride along with the next release and do not need a tag.
 - Tags are annotated (`serverctl vX.Y.Z — summary`); the release workflow
   publishes automatically on tag push.
@@ -46,6 +47,7 @@ queue is GitHub issues.
 | M7 — UX polish | Command palette, configurable intervals, error/stale surfaces, theme refinement | v0.1.0 |
 | M8 — Release engineering | goreleaser pipeline, PKGBUILD parked, docs, v0.1.0 | v0.1.0 |
 | M9 — Hardening & release hygiene | Runner pin, action bumps, PR-retarget CI, v0.2.0 docs accuracy, UI clipping papercuts | v0.2.1 |
+| M10 — Portability | dpkg/rpm package-count adapters, logind sessions with utmp fallback, SSH attempt fallbacks and socket-activated sshd matching | v0.3.0 |
 
 Post-release work: **v0.2.0** — sensors were undetected on all real hardware
 (sysfs symlink walk bug) and now render ordered by usefulness
@@ -53,6 +55,11 @@ Post-release work: **v0.2.0** — sensors were undetected on all real hardware
 [#41](https://github.com/felipecastillo-b/serverctl/pull/41)). **v0.2.1** —
 M9: CI runner pin and action bumps, CI re-runs on PR retarget, long-error and
 footer clipping fixed, docs aligned to v0.2.0 ([#42](https://github.com/felipecastillo-b/serverctl/issues/42)).
+**v0.3.0** — M10: multi-distro package counts, logind sessions, SSH attempt
+fallbacks ([#44](https://github.com/felipecastillo-b/serverctl/issues/44),
+[#45](https://github.com/felipecastillo-b/serverctl/pull/45),
+[#46](https://github.com/felipecastillo-b/serverctl/pull/46),
+[#47](https://github.com/felipecastillo-b/serverctl/pull/47)).
 
 ### Released versions
 
@@ -61,12 +68,16 @@ footer clipping fixed, docs aligned to v0.2.0 ([#42](https://github.com/felipeca
 | [`v0.1.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.1.0) | 2026-10-14 | First release: all eight modules, palette, themes, packaging pipeline |
 | [`v0.2.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.2.0) | 2026-10-15 | Sensors detected on real hardware + ordered by usefulness |
 | [`v0.2.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.2.1) | 2026-10-29 | M9: CI hardening, UI clipping papercuts, v0.2.0 docs accuracy |
+| [`v0.3.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.3.0) | 2026-10-30 | M10: dpkg/rpm counts, logind sessions, SSH attempt fallbacks |
 
 ### Shipped modules
 
 Dashboard (system, hardware, sensors), Processes, Services, Logs, Storage,
 Network, Packages, Users — under a command palette, keyboard and mouse
 navigation, dark/light themes, and per-module refresh intervals via config.
+Package counting adapts to pacman, dpkg and rpm hosts; sessions prefer logind
+with a utmp fallback; SSH attempts read the journal with auth-log and wtmp
+fallbacks.
 
 ## 3. Known limitations
 
@@ -76,42 +87,36 @@ issue labeled `bug`.
 | Area | Limitation / deferred item | Status |
 |------|---------------------------|--------|
 | Sensors | Temperature-only; chips outside the tier table still render, sorted last (extend the table as hardware appears) | by design |
-| Sensors | No fan/voltage/current readings yet | candidate (M12) |
+| Sensors | No fan/voltage/current readings yet | candidate (M11) |
 | Services | Unit mutations over SSH usually fail — polkit treats SSH sessions as non-local; no auth agent | open |
-| Access | Socket-activated `sshd@.service` units are not matched by the SSH attempt audit | open |
 | Logs | Journal visibility depends on the user's groups | environment |
-| Mouse | Table row clicks and log wheel/click are not wired | deferred (M13) |
-| UI | `esc` screen-stack pop is a no-op until detail views exist | deferred (M13) |
+| Mouse | Table row clicks and log wheel/click are not wired | deferred (M12) |
+| UI | `esc` screen-stack pop is a no-op until detail views exist | deferred (M12) |
 | Cadence | Self-ticked collector chains pause while their screen is inactive | by design (for now) |
-| Packages | Count only; pending updates are out of scope (they need elevated tooling or extra dependencies); dpkg/rpm adapters ship in M10 | in progress (M10) |
+| Packages | Count only (no per-package listing); pending updates are out of scope (they need elevated tooling or extra dependencies) | by design |
+| Packages | dpkg/rpm adapters are fixture-tested only — no live Debian/RHEL host in the loop | environment |
+| Access | wtmp fallback rows are successful remote logins only; they cannot prove the service was SSH | by design |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
-## 4. Proposed milestones (v0.3.0 onward)
+## 4. Proposed milestones (v0.4.0 onward)
 
 Proposal for the maintainer to prune or reorder. Each milestone is sized to
 become one GitHub Issue.
 
-### M10 — Portability (multi-distro)
-
-- [ ] Package-count adapters for dpkg and rpm beside the Arch adapter (the
-      post-MVP seam already exists in `internal/core/ports.go`).
-- [ ] Sessions via logind D-Bus; SSH attempts via `auth.log`/wtmp fallbacks.
-- [ ] Match socket-activated `sshd@.service` units in the access audit.
-
-### M11 — Containers (new module)
+### M10 — Containers (new module)
 
 - [ ] Read-only Docker/Podman module: container list, state, image, uptime.
       Lifecycle actions explicitly out of scope for the first cut.
 
-### M12 — Hardware health
+### M11 — Hardware health
 
 - [ ] SMART disk health via optional `smartctl` (read-only: pass/fail plus key
       attributes).
 - [ ] Sensor depth: extend the chip tier table from field reports; evaluate
       fan/voltage readings.
 
-### M13 — UX depth
+### M12 — UX depth
 
 - [ ] Screen stack and detail views (`esc` pops; drill-down from tables).
 - [ ] Palette-triggered whitelisted actions (documented follow-up in
