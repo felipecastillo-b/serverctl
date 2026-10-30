@@ -1,8 +1,10 @@
 package collectors
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -20,55 +22,104 @@ import (
 // file (589 ReadDir entries in total).
 const pacmanLocalDBPath = "var/lib/pacman/local"
 
-// pacmanManager is the manager label this Arch adapter stamps on its
-// counts. The port (core.PackageCounter) never names a manager; the
-// adapter does, so post-MVP distros bring their own label.
-const pacmanManager = "pacman"
+// dpkgStatusPath is dpkg's package database under the root prefix:
+// one blank-line-separated stanza per package dpkg knows about,
+// world-readable, with the install state in each stanza's Status
+// field. There is nothing to exec: the file is the database.
+const dpkgStatusPath = "var/lib/dpkg/status"
 
-// pacmanQueryTimeout bounds the `pacman -Qq` fallback of
-// ARCHITECTURE.md §8: one fixed-argv query that finishes in
+// rpm database markers under the root prefix. rpm has no text
+// database: modern hosts carry a SQLite database, older ones a
+// Packages file. Either marker means the host is rpm-based, but the
+// count itself cannot be read from them without rpm's own tooling.
+const (
+	rpmSQLiteDBPath   = "var/lib/rpm/rpmdb.sqlite"
+	rpmPackagesDBPath = "var/lib/rpm/Packages"
+)
+
+// Manager labels this adapter stamps on its counts. The port
+// (core.PackageCounter) never names a manager; the adapter does, so
+// each distro family reads back under its own name.
+const (
+	pacmanManager = "pacman"
+	dpkgManager   = "dpkg"
+	rpmManager    = "rpm"
+)
+
+// queryTimeout bounds the fixed-argv commands of ARCHITECTURE.md §8
+// (`pacman -Qq`, `rpm -qa`): one query each that finishes in
 // milliseconds live, generous enough never to cut a slow disk short.
-const pacmanQueryTimeout = 10 * time.Second
+const queryTimeout = 10 * time.Second
 
-// Count implements core.PackageCounter for an Arch Linux host
-// (ARCHITECTURE.md §8, row "Installed package count").
+// Count implements core.PackageCounter for the package managers
+// serverctl supports (ARCHITECTURE.md §8): it detects the host's
+// manager under the root prefix and dispatches to that manager's
+// adapter. Detection order is pacman, dpkg, rpm — the pacman local
+// database directory, the dpkg status file, then either rpm database
+// marker — so a root carrying more than one marker resolves the same
+// way every round.
 //
-// The primary source is the pacman local database directory under the
-// root prefix (<root>/var/lib/pacman/local): every installed package
-// is one <name>-<version> subdirectory, and counting subdirectories
-// is the whole job — a directory read, so fixture roots keep the walk
-// hermetic the way Disks' sysfs tree does. Distro is the ID field of
+// pacman walks <root>/var/lib/pacman/local, with the fixed-argv
+// `pacman -Qq` fallback on a live System; dpkg streams
+// <root>/var/lib/dpkg/status with no exec and no sudo; rpm has no
+// text database and runs `rpm -qa` with fixed argv and a timeout,
+// behind the live guard. Distro is the ID field of
 // <root>/etc/os-release (ID_LIKE's first token as the family
 // fallback), read through the same root prefix /etc/passwd uses; it
 // is best-effort — an unreadable os-release degrades Distro to ""
 // rather than failing the count, which is the value the screen
 // exists to show (core.PackageCount documents the trade).
 //
-// The §8 fallback — `pacman -Qq` through exec with fixed argv and a
-// timeout (§7: never a shell, never user input) — runs only when the
-// database directory is absent or unreadable AND the System is live:
-// exec has no root prefix, so a fixture System must refuse instead of
-// querying the test runner's own host, the same live guard statfs,
-// D-Bus and sdjournal use. When both sources fail, Count errors and
-// the Packages screen shows its error state (§5).
+// When detection or the manager's read fails, Count errors and the
+// Packages screen shows its error state (§5).
 func (s System) Count() (core.PackageCount, error) {
-	installed, err := s.installedCount()
+	manager, err := s.packageManager()
+	if err != nil {
+		return core.PackageCount{}, err
+	}
+	var installed int
+	switch manager {
+	case pacmanManager:
+		installed, err = s.pacmanInstalledCount()
+	case dpkgManager:
+		installed, err = s.dpkgInstalledCount()
+	case rpmManager:
+		installed, err = s.rpmInstalledCount()
+	}
 	if err != nil {
 		return core.PackageCount{}, err
 	}
 	return core.PackageCount{
 		Distro:    s.distroID(),
-		Manager:   pacmanManager,
+		Manager:   manager,
 		Installed: installed,
 	}, nil
 }
 
-// installedCount counts installed packages: the local database walk
-// first, the `pacman -Qq` fallback only when that directory is absent
-// or unreadable (ARCHITECTURE.md §8). A live database directory that
-// reads empty is a legitimate zero — a container without packages —
-// and never reaches the fallback.
-func (s System) installedCount() (int, error) {
+// packageManager probes the injected root for a supported package
+// manager in the documented order: pacman, dpkg, rpm. The probes are
+// os.Stat only — no exec, no privileges — so fixture roots exercise
+// detection exactly the way a live host runs it. An unknown root
+// errors instead of guessing a manager: a count under the wrong label
+// is worse than an explicit unsupported-host message.
+func (s System) packageManager() (string, error) {
+	switch {
+	case dirExists(s.rootPath(pacmanLocalDBPath)):
+		return pacmanManager, nil
+	case fileExists(s.rootPath(dpkgStatusPath)):
+		return dpkgManager, nil
+	case pathExists(s.rootPath(rpmSQLiteDBPath)) || pathExists(s.rootPath(rpmPackagesDBPath)):
+		return rpmManager, nil
+	}
+	return "", fmt.Errorf("no supported package manager found (pacman, dpkg, rpm)")
+}
+
+// pacmanInstalledCount counts installed packages: the local database
+// walk first, the `pacman -Qq` fallback only when that directory is
+// absent or unreadable (ARCHITECTURE.md §8). A live database
+// directory that reads empty is a legitimate zero — a container
+// without packages — and never reaches the fallback.
+func (s System) pacmanInstalledCount() (int, error) {
 	entries, err := os.ReadDir(s.rootPath(pacmanLocalDBPath))
 	if err == nil {
 		return countPackageDirs(entries), nil
@@ -89,11 +140,92 @@ func (s System) installedCount() (int, error) {
 // prints one package name per line, so the count is the output's
 // non-blank line count.
 func (s System) pacmanQueryCount() (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), pacmanQueryTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, pacmanManager, "-Qq").Output()
 	if err != nil {
 		return 0, fmt.Errorf("run pacman -Qq: %w", err)
+	}
+	return countQueryOutput(string(out)), nil
+}
+
+// dpkgInstalledCount counts installed packages by streaming
+// <root>/var/lib/dpkg/status — dpkg's world-readable database —
+// through the root prefix. No exec and no sudo: the file already
+// carries every package's install state, and reading it is a file
+// read like the pacman database walk.
+func (s System) dpkgInstalledCount() (int, error) {
+	f, err := os.Open(s.rootPath(dpkgStatusPath))
+	if err != nil {
+		return 0, fmt.Errorf("dpkg status: %w", err)
+	}
+	// Read-only handle: a close error cannot lose data.
+	defer func() { _ = f.Close() }()
+	return countDpkgInstalled(f)
+}
+
+// countDpkgInstalled counts the installed packages of a dpkg status
+// database: blank-line-separated stanzas, one per package dpkg knows
+// about, each carrying a `Status:` field of three words — want flag,
+// error flag, current state. Only the exact value
+// "install ok installed" means installed; `deinstall ok config-files`,
+// `install ok half-installed`, `install ok unpacked` and the rest of
+// dpkg's state vocabulary do not. Malformed lines and CRLF endings
+// are tolerated, and the final stanza counts without a trailing blank
+// line. Pure over an io.Reader, so the parse is table-testable
+// without a real /var/lib/dpkg.
+func countDpkgInstalled(r io.Reader) (int, error) {
+	scanner := bufio.NewScanner(r)
+	// Status lines are short, but Description can carry long
+	// translated fields; a 1 MiB ceiling keeps a pathological line
+	// from tripping the 64 KiB default.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	installed := 0
+	status := ""
+	flush := func() {
+		if status == "install ok installed" {
+			installed++
+		}
+		status = ""
+	}
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\r")
+		if strings.TrimSpace(line) == "" {
+			flush()
+			continue
+		}
+		key, value, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		if strings.TrimSpace(key) == "Status" {
+			status = strings.TrimSpace(value)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("dpkg status: %w", err)
+	}
+	flush()
+	return installed, nil
+}
+
+// rpmInstalledCount counts installed packages with `rpm -qa`, the
+// only practical source: rpm keeps a binary database (rpmdb.sqlite on
+// modern hosts, Packages on older ones), so there is no text file to
+// walk. The command is the §8-sanctioned shape — fixed argv, a
+// timeout, parsed output, never a shell (§7) — and it runs only on a
+// live System: exec has no root prefix, so a fixture System refuses
+// instead of querying the runner's own rpm database, the same live
+// guard statfs, D-Bus and sdjournal use.
+func (s System) rpmInstalledCount() (int, error) {
+	if !s.IsLive() {
+		return 0, fmt.Errorf("collectors: rpm package count requires the live rpm database: System is rooted at %q", s.root)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, rpmManager, "-qa").Output()
+	if err != nil {
+		return 0, fmt.Errorf("rpm -qa: %w", err)
 	}
 	return countQueryOutput(string(out)), nil
 }
@@ -115,10 +247,10 @@ func countPackageDirs(entries []os.DirEntry) int {
 	return n
 }
 
-// countQueryOutput counts the package names of `pacman -Qq` output:
-// one per line. Blank lines — the output's trailing newline — are
-// tolerated, not counted. Pure, so the fallback's parsing is
-// table-testable without running pacman.
+// countQueryOutput counts the package names of `pacman -Qq` and
+// `rpm -qa` output: one per line. Blank lines — the output's trailing
+// newline — are tolerated, not counted. Pure, so both commands'
+// parsing is table-testable without running either.
 func countQueryOutput(output string) int {
 	n := 0
 	for _, line := range strings.Split(output, "\n") {
@@ -127,6 +259,26 @@ func countQueryOutput(output string) int {
 		}
 	}
 	return n
+}
+
+// dirExists reports whether path exists and is a directory. A stat
+// error (missing path, unreadable parent) reads as false: detection
+// moves on to the next probe instead of failing the count.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// fileExists reports whether path exists and is not a directory.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// pathExists reports whether path exists, whatever its type.
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // ParseOSReleaseID reads the distribution ID out of an os-release(5)

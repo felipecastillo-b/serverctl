@@ -222,11 +222,13 @@ type Connection struct {
 // PackageCount is the installed-package summary the Packages screen
 // shows (ARCHITECTURE.md §4): which distro the count comes from, which
 // package manager produced it, and how many packages are installed.
-// Count only — per-package listings and pending updates both arrive
-// with multi-distro support, post-MVP, and issue #26 dropped pending
-// updates from the milestone outright. Distro is the os-release ID
-// ("arch"); an unreadable os-release reads as "" — the count is the
-// value, the labels are best-effort.
+// Count only. The shipped adapters cover pacman (Arch), dpkg
+// (Debian/Ubuntu) and rpm (Fedora/RHEL family); per-package listings
+// remain post-MVP, and pending updates are out of scope — reading
+// them needs elevated tooling the unprivileged read path deliberately
+// avoids. Distro is the os-release ID ("arch"); an unreadable
+// os-release reads as "" — the count is the value, the labels are
+// best-effort.
 type PackageCount struct {
 	Distro    string
 	Manager   string

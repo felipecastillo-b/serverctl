@@ -134,10 +134,10 @@ type ListenPort struct {
     PID         int
     Process     string
 }
-type PackageCount struct { // M6: installed count only; per-package
-    Distro    string         // listings arrive with multi-distro support,
-    Manager   string         // post-MVP
-    Installed int
+type PackageCount struct { // M6/M10: installed count only; per-package
+    Distro    string         // listings remain post-MVP, pending updates
+    Manager   string         // are out of scope — they need elevated
+    Installed int            // tooling the unprivileged path avoids
 }
 type UserSession struct {
     User, TTY, From string
@@ -179,7 +179,7 @@ type SSHAttempt struct {
 
 ## 8. System information strategy
 
-Prefer kernel interfaces over shelling out. When a command is unavoidable (pacman fallback, post-MVP distro package managers), it runs with fixed argv, a timeout, and its output is parsed — never re-interpolated.
+Prefer kernel interfaces over shelling out. When a command is unavoidable (the `pacman -Qq` fallback, rpm's `rpm -qa`), it runs with fixed argv, a timeout, and its output is parsed — never re-interpolated.
 
 | Info area | Preferred source | Fallback |
 |-----------|------------------|----------|
@@ -195,7 +195,9 @@ Prefer kernel interfaces over shelling out. When a command is unavoidable (pacma
 | Processes | `/proc/<pid>/` | — |
 | Services | systemd D-Bus API (`go-systemd`) | — |
 | Journal | `sdjournal` API | — |
-| Installed package count | pacman local database directory (`/var/lib/pacman/local`) | `pacman -Qq` (fixed argv, timeout) |
+| Installed package count (pacman) | pacman local database directory (`/var/lib/pacman/local`) | `pacman -Qq` (fixed argv, timeout) |
+| Installed package count (dpkg) | dpkg package database (`/var/lib/dpkg/status`) | — |
+| Installed package count (rpm) | `rpm -qa` (fixed argv, timeout; rpm has no text database) | — |
 | Users / sessions | utmp file, logind D-Bus | `lastlog` file |
 | SSH attempts | `wtmp`, journal of `sshd` unit | auth log parsing |
 
