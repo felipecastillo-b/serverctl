@@ -60,7 +60,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Ports / connections | `/proc/net/{tcp,tcp6,udp,udp6,unix}` | 5 s default (config `intervals.network.sockets`) |
 | Packages | pacman local database (installed count; other distros post-MVP) | 30 s self-tick (config `intervals.packages`) |
 | Users / sessions | logind D-Bus (utmp file fallback) | 10 s default (config `intervals.users.sessions`) |
-| SSH audit | `/var/log/wtmp`, journal of `sshd` | 30 s default (config `intervals.users.attempts`) |
+| SSH audit | journal of the sshd process family (auth log, wtmp fallbacks) | 30 s default (config `intervals.users.attempts`) |
 | Sensors | `/sys/class/hwmon` | each dashboard round (`refresh_seconds`) |
 | System info | `/proc/cpuinfo`, `uname`, DMI sysfs | each dashboard round (`refresh_seconds`) |
 
@@ -199,7 +199,7 @@ Prefer kernel interfaces over shelling out. When a command is unavoidable (the `
 | Installed package count (dpkg) | dpkg package database (`/var/lib/dpkg/status`) | — |
 | Installed package count (rpm) | `rpm -qa` (fixed argv, timeout; rpm has no text database) | — |
 | Users / sessions | logind D-Bus | utmp file |
-| SSH attempts | `wtmp`, journal of `sshd` unit | auth log parsing |
+| SSH attempts | journal `SYSLOG_IDENTIFIER` of the sshd process family (covers `sshd.service`, `ssh.service` and socket-activated `sshd@N.service`) | `/var/log/auth.log` or `/var/log/secure`; then `/var/log/wtmp` (successful remote logins) |
 
 ## 9. Key dependencies
 

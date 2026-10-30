@@ -268,12 +268,15 @@ type UserSession struct {
 // view's job is the recent authentication story, not only its
 // failures.
 //
-// Unprivileged visibility: attempts come from the sshd unit's
-// journal, and a reader outside the systemd-journal (or adm) group
-// sees only their own session's entries — so the list can
-// legitimately read empty on a box with plenty of sshd traffic.
+// Unprivileged visibility: attempts come from the journal of the
+// sshd process family first, with auth-log and wtmp file fallbacks on
+// journal errors. A reader outside the systemd-journal (or adm) group
+// sees only their own session's journal entries — so a journal listing
+// can legitimately read empty on a box with plenty of sshd traffic.
 // That is journald's access model, not a collector failure
-// (core.JournalEntry documents the same trade).
+// (core.JournalEntry documents the same trade). The fallbacks narrow
+// the blind spot: auth logs carry both verdicts, while wtmp carries
+// successful remote logins only.
 type SSHAttempt struct {
 	Time     time.Time
 	User     string

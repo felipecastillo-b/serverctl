@@ -33,7 +33,7 @@ action whitelisted and gated behind a confirmation prompt.
 - Listening ports and active connections
 - Installed package count via pacman, dpkg or rpm
 - Users and login sessions (logind D-Bus, utmp fallback)
-- SSH login attempt audit
+- SSH login attempt audit (journal, auth log and wtmp fallbacks)
 - Hardware sensors via hwmon, ordered by dashboard usefulness
 
 ## Requirements

@@ -17,11 +17,11 @@ func TestAttemptsFromEntries(t *testing.T) {
 	base := time.Unix(1791564800, 0)
 	entries := []core.JournalEntry{
 		// Oldest first, the order Tail returns.
-		{Time: base, Unit: sshdUnit, Message: "Server listening on 0.0.0.0 port 22."},
-		{Time: base.Add(1 * time.Second), Unit: sshdUnit, Message: "Accepted publickey for alice from 192.168.1.50 port 51422 ssh2"},
-		{Time: base.Add(2 * time.Second), Unit: sshdUnit, Message: "Received disconnect from 203.0.113.7 port 41000:11: Bye Bye [preauth]"},
-		{Time: base.Add(3 * time.Second), Unit: sshdUnit, Message: "Failed password for invalid user admin from 203.0.113.7 port 41002 ssh2"},
-		{Time: base.Add(4 * time.Second), Unit: sshdUnit, Message: "Failed password for root from 203.0.113.7 port 41000 ssh2"},
+		{Time: base, Unit: "sshd.service", Message: "Server listening on 0.0.0.0 port 22."},
+		{Time: base.Add(1 * time.Second), Unit: "sshd.service", Message: "Accepted publickey for alice from 192.168.1.50 port 51422 ssh2"},
+		{Time: base.Add(2 * time.Second), Unit: "sshd.service", Message: "Received disconnect from 203.0.113.7 port 41000:11: Bye Bye [preauth]"},
+		{Time: base.Add(3 * time.Second), Unit: "sshd.service", Message: "Failed password for invalid user admin from 203.0.113.7 port 41002 ssh2"},
+		{Time: base.Add(4 * time.Second), Unit: "sshd.service", Message: "Failed password for root from 203.0.113.7 port 41000 ssh2"},
 	}
 
 	got := attemptsFromEntries(entries)
@@ -50,7 +50,7 @@ func TestAttemptsFromEntriesCapsAtLimit(t *testing.T) {
 	for i := range entries {
 		entries[i] = core.JournalEntry{
 			Time:    base.Add(time.Duration(i) * time.Second),
-			Unit:    sshdUnit,
+			Unit:    "sshd.service",
 			Message: fmt.Sprintf("Failed password for user%d from 203.0.113.7 port %d ssh2", i, 40000+i),
 		}
 	}
@@ -79,7 +79,7 @@ func TestAttemptsFromEntriesEmpty(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("attemptsFromEntries(nil) = %d attempts, want 0", len(got))
 	}
-	got = attemptsFromEntries([]core.JournalEntry{{Time: time.Now(), Unit: sshdUnit, Message: "Server listening on 0.0.0.0 port 22."}})
+	got = attemptsFromEntries([]core.JournalEntry{{Time: time.Now(), Unit: "sshd.service", Message: "Server listening on 0.0.0.0 port 22."}})
 	if len(got) != 0 {
 		t.Errorf("chatter-only window = %d attempts, want 0", len(got))
 	}

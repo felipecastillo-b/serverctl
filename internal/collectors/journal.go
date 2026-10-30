@@ -39,6 +39,22 @@ const journalPriorityInfo = 6
 // that is not live refuses instead of guessing where entries would
 // come from.
 func (s System) Tail(unit string, limit int) ([]core.JournalEntry, string, error) {
+	var matches []string
+	if unit != "" {
+		matches = append(matches, sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT+"="+unit)
+	}
+	return s.tailWithMatches(limit, matches...)
+}
+
+// tailWithMatches is Tail's body with raw match strings instead of a
+// unit, so callers whose source cannot be named by one unit can still
+// share the seek-backwards walk. Journald ORs multiple matches on the
+// SAME field and ANDs matches across different fields (the
+// `journalctl -u a -u b` semantics, sd_journal_add_match(3)); that is
+// what lets the SSH attempt collector cover a family of
+// SYSLOG_IDENTIFIER values — standalone and socket-activated sshd —
+// in one query without wildcard support.
+func (s System) tailWithMatches(limit int, matches ...string) ([]core.JournalEntry, string, error) {
 	if !s.IsLive() {
 		return nil, "", fmt.Errorf("collectors: journal reads require the live system journal: System is rooted at %q", s.root)
 	}
@@ -53,8 +69,10 @@ func (s System) Tail(unit string, limit int) ([]core.JournalEntry, string, error
 	// Close's error can only be a failed dlopen lookup, impossible
 	// once the open above succeeded and cached the handle.
 	defer func() { _ = j.Close() }()
-	if err := matchUnit(j, unit); err != nil {
-		return nil, "", err
+	for _, match := range matches {
+		if err := j.AddMatch(match); err != nil {
+			return nil, "", fmt.Errorf("collectors: match %q: %w", match, err)
+		}
 	}
 	if err := j.SeekTail(); err != nil {
 		return nil, "", fmt.Errorf("collectors: seek journal tail: %w", err)

@@ -136,12 +136,13 @@ type SessionLister interface {
 
 // SSHAttemptLister is the Users module's audit read port: recent SSH
 // login attempts, bounded. collectors.System implements it over the
-// sshd unit's journal through the Logs module's sdjournal machinery
-// (ARCHITECTURE.md §3, §8); the wtmp and auth-log fallbacks are
-// post-MVP adapters that plug in beside it. The bound is the
-// implementer's policy — the way UnitLister owns its listing
-// strategy — and nothing journal-shaped leaks into the contract,
-// so the port survives its sources changing.
+// journal of the sshd process family, falling back on a journal ERROR
+// — never on an empty result — to the auth log (/var/log/auth.log or
+// /var/log/secure) and then wtmp, which holds successful logins only
+// (ARCHITECTURE.md §3, §8). The bound is the implementer's policy —
+// the way UnitLister owns its listing strategy — and nothing
+// journal-shaped or file-shaped leaks into the contract, so the port
+// survives its sources changing.
 type SSHAttemptLister interface {
 	// Attempts returns the most recent SSH login attempts, newest
 	// first, never more than the implementer's bound.
