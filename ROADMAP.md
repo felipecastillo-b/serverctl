@@ -83,7 +83,7 @@ issue labeled `bug`.
 | Mouse | Table row clicks and log wheel/click are not wired | deferred (M13) |
 | UI | `esc` screen-stack pop is a no-op until detail views exist | deferred (M13) |
 | Cadence | Self-ticked collector chains pause while their screen is inactive | by design (for now) |
-| Packages | Count only (Arch/pacman); pending updates dropped in #26, other distros planned | deferred (M10) |
+| Packages | Count only; pending updates are out of scope (they need elevated tooling or extra dependencies); dpkg/rpm adapters ship in M10 | in progress (M10) |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
@@ -96,7 +96,6 @@ become one GitHub Issue.
 
 - [ ] Package-count adapters for dpkg and rpm beside the Arch adapter (the
       post-MVP seam already exists in `internal/core/ports.go`).
-- [ ] Pending-updates listing (revisit the #26 scope decision; read-only, per manager).
 - [ ] Sessions via logind D-Bus; SSH attempts via `auth.log`/wtmp fallbacks.
 - [ ] Match socket-activated `sshd@.service` units in the access audit.
 
@@ -134,6 +133,8 @@ decision:
 - No WebUI or remote API.
 - No multi-server management.
 - No historical metrics beyond live views.
+- No pending package updates (they need elevated tooling or extra
+  dependencies).
 
 ## 6. Release runbook
 
