@@ -1,10 +1,11 @@
 # serverctl Roadmap
 
-**Current release: [v0.3.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.3.0) (2026-10-30).**
+**Current release: [v0.4.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.4.0) (2026-10-30).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
 added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
-delivered M10 portability. This document covers what is delivered, how work
-flows, the live bug queue, and the proposed milestones ahead. Everything under
+delivered M10 portability; v0.4.0 delivered M11 containers. This document
+covers what is delivered, how work flows, the live bug queue, and the proposed
+milestones ahead. Everything under
 "Proposed milestones" is a proposal — the maintainer prunes, splits, or
 reorders.
 
@@ -19,8 +20,8 @@ reorders.
 
 ### Release policy (0.x)
 
-- Bug-fix-only batches tag patch releases: `v0.3.1`, `v0.3.2`, ...
-- The first new feature or visible behavior change bumps MINOR: `v0.4.0`.
+- Bug-fix-only batches tag patch releases: `v0.4.1`, `v0.4.2`, ...
+- The first new feature or visible behavior change bumps MINOR: `v0.5.0`.
 - Docs-only changes ride along with the next release and do not need a tag.
 - Tags are annotated (`serverctl vX.Y.Z — summary`); the release workflow
   publishes automatically on tag push.
@@ -48,6 +49,7 @@ queue is GitHub issues.
 | M8 — Release engineering | goreleaser pipeline, PKGBUILD parked, docs, v0.1.0 | v0.1.0 |
 | M9 — Hardening & release hygiene | Runner pin, action bumps, PR-retarget CI, v0.2.0 docs accuracy, UI clipping papercuts | v0.2.1 |
 | M10 — Portability | dpkg/rpm package-count adapters, logind sessions with utmp fallback, SSH attempt fallbacks and socket-activated sshd matching | v0.3.0 |
+| M11 — Containers | Read-only Docker/Podman module: container list, state, image and uptime over the local compat API socket | v0.4.0 |
 
 Post-release work: **v0.2.0** — sensors were undetected on all real hardware
 (sysfs symlink walk bug) and now render ordered by usefulness
@@ -60,6 +62,12 @@ fallbacks ([#44](https://github.com/felipecastillo-b/serverctl/issues/44),
 [#45](https://github.com/felipecastillo-b/serverctl/pull/45),
 [#46](https://github.com/felipecastillo-b/serverctl/pull/46),
 [#47](https://github.com/felipecastillo-b/serverctl/pull/47)).
+**v0.4.0** — M11: read-only Docker/Podman containers over the local compat API
+socket ([#49](https://github.com/felipecastillo-b/serverctl/issues/49),
+[#50](https://github.com/felipecastillo-b/serverctl/pull/50),
+[#51](https://github.com/felipecastillo-b/serverctl/pull/51),
+[#52](https://github.com/felipecastillo-b/serverctl/pull/52),
+[#53](https://github.com/felipecastillo-b/serverctl/pull/53)).
 
 ### Released versions
 
@@ -69,15 +77,17 @@ fallbacks ([#44](https://github.com/felipecastillo-b/serverctl/issues/44),
 | [`v0.2.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.2.0) | 2026-10-15 | Sensors detected on real hardware + ordered by usefulness |
 | [`v0.2.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.2.1) | 2026-10-29 | M9: CI hardening, UI clipping papercuts, v0.2.0 docs accuracy |
 | [`v0.3.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.3.0) | 2026-10-30 | M10: dpkg/rpm counts, logind sessions, SSH attempt fallbacks |
+| [`v0.4.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.4.0) | 2026-10-30 | M11: read-only containers module (Docker/Podman) |
 
 ### Shipped modules
 
 Dashboard (system, hardware, sensors), Processes, Services, Logs, Storage,
-Network, Packages, Users — under a command palette, keyboard and mouse
-navigation, dark/light themes, and per-module refresh intervals via config.
-Package counting adapts to pacman, dpkg and rpm hosts; sessions prefer logind
-with a utmp fallback; SSH attempts read the journal with auth-log and wtmp
-fallbacks.
+Network, Packages, Users, Containers — under a command palette, keyboard and
+mouse navigation, dark/light themes, and per-module refresh intervals via
+config. Package counting adapts to pacman, dpkg and rpm hosts; sessions prefer
+logind with a utmp fallback; SSH attempts read the journal with auth-log and
+wtmp fallbacks; containers read the local Docker-compatible daemon, rootless
+sockets first.
 
 ## 3. Known limitations
 
@@ -87,11 +97,11 @@ issue labeled `bug`.
 | Area | Limitation / deferred item | Status |
 |------|---------------------------|--------|
 | Sensors | Temperature-only; chips outside the tier table still render, sorted last (extend the table as hardware appears) | by design |
-| Sensors | No fan/voltage/current readings yet | candidate (M11) |
+| Sensors | No fan/voltage/current readings yet | candidate (M12) |
 | Services | Unit mutations over SSH usually fail — polkit treats SSH sessions as non-local; no auth agent | open |
 | Logs | Journal visibility depends on the user's groups | environment |
-| Mouse | Table row clicks and log wheel/click are not wired | deferred (M12) |
-| UI | `esc` screen-stack pop is a no-op until detail views exist | deferred (M12) |
+| Mouse | Table row clicks and log wheel/click are not wired | deferred (M13) |
+| UI | `esc` screen-stack pop is a no-op until detail views exist | deferred (M13) |
 | Cadence | Self-ticked collector chains pause while their screen is inactive | by design (for now) |
 | Packages | Count only (no per-package listing); pending updates are out of scope (they need elevated tooling or extra dependencies) | by design |
 | Packages | dpkg/rpm adapters are fixture-tested only — no live Debian/RHEL host in the loop | environment |
@@ -100,24 +110,19 @@ issue labeled `bug`.
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
-## 4. Proposed milestones (v0.4.0 onward)
+## 4. Proposed milestones (v0.5.0 onward)
 
 Proposal for the maintainer to prune or reorder. Each milestone is sized to
 become one GitHub Issue.
 
-### M10 — Containers (new module)
-
-- [x] Read-only Docker/Podman module: container list, state, image, uptime.
-      Lifecycle actions explicitly out of scope for the first cut.
-
-### M11 — Hardware health
+### M12 — Hardware health
 
 - [ ] SMART disk health via optional `smartctl` (read-only: pass/fail plus key
       attributes).
 - [ ] Sensor depth: extend the chip tier table from field reports; evaluate
       fan/voltage readings.
 
-### M12 — UX depth
+### M13 — UX depth
 
 - [ ] Screen stack and detail views (`esc` pops; drill-down from tables).
 - [ ] Palette-triggered whitelisted actions (documented follow-up in

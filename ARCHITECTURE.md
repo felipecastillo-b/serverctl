@@ -150,7 +150,7 @@ type SSHAttempt struct {
     SourceIP string
     Success  bool
 }
-type Container struct { // M10: read-only listing; uptime is display-derived
+type Container struct { // M11: read-only listing; uptime is display-derived
     ID      string        // full daemon ID; the screen shows the short form
     Name    string        // primary name, leading "/" stripped
     Image   string
