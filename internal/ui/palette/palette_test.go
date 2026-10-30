@@ -89,10 +89,10 @@ func TestTypingFiltersResults(t *testing.T) {
 }
 
 func TestCursorWrapsBothEnds(t *testing.T) {
-	m := newShown(t) // cursor 0 of 8 results
+	m := newShown(t) // cursor 0 of 9 results
 
 	press(t, m, tea.KeyUp)
-	if got, ok := m.SelectedIndex(); !ok || got != 7 {
+	if got, ok := m.SelectedIndex(); !ok || got != 8 {
 		t.Fatalf("up from the first result wraps to the last, got index %d (ok=%v)", got, ok)
 	}
 

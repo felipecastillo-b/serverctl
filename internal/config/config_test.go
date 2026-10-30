@@ -155,6 +155,7 @@ intervals:
   packages: 13
   users.sessions: 14
   users.attempts: 15
+  containers: 16
 `)
 
 	cfg, err := config.Load(path)
@@ -170,6 +171,7 @@ intervals:
 		"packages":           13,
 		"users.sessions":     14,
 		"users.attempts":     15,
+		"containers":         16,
 	}
 	if len(cfg.Intervals) != len(want) {
 		t.Fatalf("intervals: want %d keys, got %d (%v)", len(want), len(cfg.Intervals), cfg.Intervals)

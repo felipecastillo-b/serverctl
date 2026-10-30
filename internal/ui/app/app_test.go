@@ -36,7 +36,7 @@ func TestScreenCyclingMovesSidebarSelection(t *testing.T) {
 		want screens.ID
 	}{
 		{"tab from Dashboard activates Processes", tea.KeyMsg{Type: tea.KeyTab}, screens.Processes},
-		{"shift+tab from Dashboard wraps to Users", tea.KeyMsg{Type: tea.KeyShiftTab}, screens.Users},
+		{"shift+tab from Dashboard wraps to Containers", tea.KeyMsg{Type: tea.KeyShiftTab}, screens.Containers},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

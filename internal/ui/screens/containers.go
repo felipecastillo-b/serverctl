@@ -23,7 +23,7 @@ import (
 // of the live process table — a daemon listing is a socket round trip,
 // not a procfs read. It is the built-in default the config
 // `intervals.containers` override replaces and the value
-// DefaultCadences ships in the next wiring slice.
+// DefaultCadences ships.
 const defaultContainersInterval = 10 * time.Second
 
 // containersTickMsg re-arms one round of the screen's own cadence.
