@@ -42,6 +42,8 @@ action whitelisted and gated behind a confirmation prompt.
   journal screens read systemd over D-Bus and sdjournal.
 - Arch Linux is the verified platform today; the dpkg and rpm package-count
   adapters are fixture-tested.
+- Containers are optional: the module reads a local Docker or Podman socket
+  when one exists. No container daemon is required for the rest of the app.
 - Go 1.24+ (plus the systemd headers) only if you build from source.
 
 ## Install
@@ -77,12 +79,21 @@ bin/serverctl -version  # print the build version and exit
 
 ## Privileges
 
-serverctl runs unprivileged. It never escalates — no sudo, no setuid, no password
-prompts. Reads need no special rights, and mutations ask systemd over the system
-D-Bus, where PolicyKit decides whether the caller may run them.
+serverctl itself never escalates — no sudo, no setuid, no password prompts — and
+every read it performs is read-only. The one privilege it can inherit rather
+than grant is the container socket: reading a system-wide Docker socket carries
+the same power as the `docker` group, which is effectively root. Rootless Podman
+sockets belong to your user and need no extra group. Mutations ask systemd over
+the system D-Bus, where PolicyKit decides whether the caller may run them.
 
-- **Reads** work as a regular user. Journal entries are richer when your user is
-  in the `systemd-journal` group, but nothing requires it.
+- **Reads** work as a regular user and never write: the Containers module only
+  issues GETs to the local daemon and never starts, stops, removes or execs
+  anything. Journal entries are richer when your user is in the
+  `systemd-journal` group, but nothing requires it.
+- **Containers** are optional and prefer rootless: a Podman or rootless Docker
+  socket needs no group membership, while a system-wide Docker socket is
+  root-equivalent — joining the `docker` group is a real privilege grant, not a
+  read convenience.
 - **Mutations** (start/stop/restart) are polkit-gated, whitelisted, confirmed in
   a modal, and audited locally — there is no generic command runner.
 

@@ -6,8 +6,8 @@
 // bytes or environment values in, domain data or paths out — so the
 // wire grammar and the candidate order are table-tested without a
 // daemon, a socket or a live host (§10). Nothing here performs I/O;
-// the socket client and System.Containers arrive with the collector
-// slice.
+// the unix-socket client and System.Containers live in
+// containers_client.go.
 
 package collectors
 
