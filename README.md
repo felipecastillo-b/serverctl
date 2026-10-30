@@ -31,7 +31,7 @@ action whitelisted and gated behind a confirmation prompt.
 - Storage: disks, partitions, usage
 - Network interfaces and live traffic
 - Listening ports and active connections
-- Installed package count via pacman's local database (other distros planned)
+- Installed package count via pacman, dpkg or rpm
 - Users and login sessions
 - SSH login attempt audit
 - Hardware sensors via hwmon, ordered by dashboard usefulness
@@ -40,8 +40,8 @@ action whitelisted and gated behind a confirmation prompt.
 
 - Linux. serverctl targets systemd-based distributions — the services and
   journal screens read systemd over D-Bus and sdjournal.
-- Arch Linux is the verified platform today. **Support for more distributions
-  is coming soon.**
+- Arch Linux is the verified platform today; the dpkg and rpm package-count
+  adapters are fixture-tested.
 - Go 1.24+ (plus the systemd headers) only if you build from source.
 
 ## Install
@@ -62,9 +62,11 @@ cd serverctl
 make build        # produces bin/serverctl
 ```
 
-**Other distributions — coming soon.** Today the packages screen counts through
-pacman's local database, so Arch Linux is the verified platform; multi-distro
-support is on the roadmap.
+**Other distributions.** Arch Linux is the verified platform. The packages
+screen adapts to the host's package manager: pacman's local database on Arch,
+`/var/lib/dpkg/status` on Debian/Ubuntu, and `rpm -qa` on the Fedora/RHEL
+family. Only Arch is exercised end to end today; the dpkg and rpm adapters are
+fixture-tested.
 
 ## Usage
 

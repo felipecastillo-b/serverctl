@@ -103,11 +103,12 @@ type SocketLister interface {
 // PackageCounter is the Packages module's read port: the installed
 // package count of the host's package manager. The port is
 // distro/manager-agnostic by construction — the manager and distro
-// ride IN the result, never the method set — so post-MVP adapters
-// (dpkg, rpm, ...) plug in beside collectors.System's Arch
-// implementation without the screen or this contract changing, as
-// with UnitLister. collectors.System implements it over the pacman
-// local database with `pacman -Qq` as the fixed-argv fallback
+// ride IN the result, never the method set — so one adapter serves
+// every supported manager without the screen or this contract
+// changing, as with UnitLister. collectors.System implements it by
+// detecting pacman, dpkg or rpm under its root and dispatching: the
+// pacman local database (`pacman -Qq` as the fixed-argv fallback),
+// dpkg's status file, and `rpm -qa` behind the live guard
 // (ARCHITECTURE.md §3, §8); the exact counting policy lives in the
 // implementer's doc comment.
 type PackageCounter interface {

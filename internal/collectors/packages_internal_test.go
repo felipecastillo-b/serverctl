@@ -3,6 +3,8 @@ package collectors
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,9 +81,178 @@ func TestCountPackageDirs(t *testing.T) {
 	}
 }
 
-// TestCountQueryOutput pins the `pacman -Qq` line counting: one
-// package per line, the trailing newline tolerated, blank lines never
-// counted.
+// TestPackageManagerDetection pins the documented detection order
+// against roots built in t.TempDir(): pacman's local database
+// directory, dpkg's status file, then either rpm database marker. The
+// precedence rows are load-bearing — a root carrying markers for more
+// than one manager must resolve the same way every round — and the
+// empty root proves an unsupported host errors instead of guessing a
+// manager.
+func TestPackageManagerDetection(t *testing.T) {
+	tests := []struct {
+		name    string
+		markers []string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "pacman local database directory",
+			markers: []string{"var/lib/pacman/local/"},
+			want:    pacmanManager,
+		},
+		{
+			name:    "dpkg status file",
+			markers: []string{"var/lib/dpkg/status"},
+			want:    dpkgManager,
+		},
+		{
+			name:    "rpm sqlite database",
+			markers: []string{"var/lib/rpm/rpmdb.sqlite"},
+			want:    rpmManager,
+		},
+		{
+			name:    "rpm packages database",
+			markers: []string{"var/lib/rpm/Packages"},
+			want:    rpmManager,
+		},
+		{
+			name:    "no marker is an error",
+			markers: nil,
+			wantErr: true,
+		},
+		{
+			name:    "pacman precedes dpkg",
+			markers: []string{"var/lib/dpkg/status", "var/lib/pacman/local/"},
+			want:    pacmanManager,
+		},
+		{
+			name:    "dpkg precedes rpm",
+			markers: []string{"var/lib/rpm/rpmdb.sqlite", "var/lib/dpkg/status"},
+			want:    dpkgManager,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, marker := range tt.markers {
+				writeMarker(t, root, marker)
+			}
+			got, err := New(root).packageManager()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("packageManager = %q, want an error", got)
+				}
+				if !strings.Contains(err.Error(), "no supported package manager") {
+					t.Fatalf("packageManager error = %v, want the unsupported-manager message", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("packageManager: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("packageManager = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// writeMarker creates one detection marker under root: a trailing
+// slash means a directory, anything else an empty file, parents
+// included.
+func writeMarker(t *testing.T, root, rel string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if strings.HasSuffix(rel, "/") {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir parent of %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// TestCountDpkgInstalled pins the dpkg status parse: blank-line-
+// separated stanzas, only the exact "install ok installed" status
+// counted, every other state of dpkg's vocabulary left out. The
+// tolerance rows are the real-file shapes — CRLF endings, malformed
+// lines, and a final stanza with no trailing blank line.
+func TestCountDpkgInstalled(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+		want   int
+	}{
+		{
+			name: "only installed stanzas count",
+			status: "Package: bash\n" +
+				"Status: install ok installed\n" +
+				"Version: 5.2.26-1\n" +
+				"\n" +
+				"Package: vim\n" +
+				"Status: deinstall ok config-files\n" +
+				"Version: 9.1.0700-1\n" +
+				"\n" +
+				"Package: curl\n" +
+				"Status: install ok half-installed\n" +
+				"\n" +
+				"Package: nano\n" +
+				"Status: install ok installed\n",
+			want: 2,
+		},
+		{
+			name:   "empty input reads zero",
+			status: "",
+			want:   0,
+		},
+		{
+			name:   "final stanza counts without trailing blank line",
+			status: "Package: bash\nStatus: install ok installed\n",
+			want:   1,
+		},
+		{
+			name: "CRLF line endings tolerated",
+			status: "Package: bash\r\n" +
+				"Status: install ok installed\r\n" +
+				"\r\n" +
+				"Package: vim\r\n" +
+				"Status: install ok installed\r\n",
+			want: 2,
+		},
+		{
+			name: "malformed lines are ignored",
+			status: "this line has no colon\n" +
+				"Package: bash\n" +
+				"Status: install ok installed\n",
+			want: 1,
+		},
+		{
+			name:   "config-files is not installed",
+			status: "Package: vim\nStatus: deinstall ok config-files\n",
+			want:   0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := countDpkgInstalled(strings.NewReader(tt.status))
+			if err != nil {
+				t.Fatalf("countDpkgInstalled: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("countDpkgInstalled = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCountQueryOutput pins the `pacman -Qq` and `rpm -qa` line
+// counting: one package per line, the trailing newline tolerated,
+// blank lines never counted.
 func TestCountQueryOutput(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -94,6 +265,7 @@ func TestCountQueryOutput(t *testing.T) {
 		{"trailing newline tolerated", "bash\npacman\n", 2},
 		{"no trailing newline still counts", "bash\npacman", 2},
 		{"blank line never counts", "bash\n\npacman\n", 2},
+		{"whitespace-only line never counts", "bash\n \t\nrpm\n", 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
