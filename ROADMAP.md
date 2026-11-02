@@ -116,8 +116,6 @@ issue labeled `bug`.
 | SMART | Removed in v0.5.1: SMART reads require root or CAP_SYS_RAWIO, and serverctl does not escalate or require extra system configuration | out of scope |
 | Services | Unit mutations over SSH usually fail — polkit treats SSH sessions as non-local; no auth agent | open |
 | Logs | Journal visibility depends on the user's groups | environment |
-| Mouse | Table row clicks and log wheel/click are not wired | deferred (M13) |
-| UI | `esc` screen-stack pop is a no-op until detail views exist | deferred (M13) |
 | Cadence | Self-ticked collector chains pause while their screen is inactive | by design (for now) |
 | Packages | Count only (no per-package listing); pending updates are out of scope (they need elevated tooling or extra dependencies) | by design |
 | Packages | dpkg/rpm adapters are fixture-tested only — no live Debian/RHEL host in the loop | environment |

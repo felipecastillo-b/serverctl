@@ -469,12 +469,30 @@ func (s *network) claimNav(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return s, cmd, true
 }
 
-// UpdateMouse handles nothing: Network is a read-only module — no
-// modal, no row actions — so every mouse event passes to the shell
-// (§6's parity rule wants keyboard equivalents for mouse actions, and
-// the keyboard side is complete).
+// UpdateMouse lets a left press select the clicked table row: the
+// exact parity of the up/down keys. Clicks outside the table fall
+// through to the shell.
 func (s *network) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
-	return s, nil, false
+	event := tea.MouseEvent(msg)
+	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
+		return s, nil, false
+	}
+	if s.lastWidth <= 0 {
+		return s, nil, false
+	}
+	row, ok := tableRowAt(s.table, s.columnsFor(s.lastWidth), event.X, event.Y)
+	if !ok {
+		return s, nil, false
+	}
+	// Move by the delta instead of SetCursor: the widget's SetCursor
+	// recomputes the window around the new cursor, while the move methods
+	// keep the visible window stable.
+	if delta := row - s.table.Cursor(); delta > 0 {
+		s.table.MoveDown(delta)
+	} else if delta < 0 {
+		s.table.MoveUp(-delta)
+	}
+	return s, nil, true
 }
 
 // cycleView advances the rendered listing: `v` walks interfaces →
@@ -566,6 +584,7 @@ func (s *network) reapply() {
 			s.table.SetCursor(0)
 		}
 	}
+	anchorTableCursor(&s.table)
 }
 
 // filterAndSortIfaces narrows the collected listing to rows whose name
@@ -914,8 +933,9 @@ func (s *network) View(width, height int) string {
 	if s.filtering {
 		body--
 	}
-	if body > 0 {
+	if body > 0 && s.table.Height() != body-1 {
 		s.table.SetHeight(body)
+		anchorTableCursor(&s.table)
 	}
 
 	muted := lipgloss.NewStyle().Foreground(s.theme.Muted)

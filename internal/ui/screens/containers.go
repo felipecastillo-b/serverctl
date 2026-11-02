@@ -268,12 +268,30 @@ func (s *containers) claimNav(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return s, cmd, true
 }
 
-// UpdateMouse handles nothing: Containers is a read-only module — no
-// modal, no row actions — so every mouse event passes to the shell
-// (§6's parity rule wants keyboard equivalents for mouse actions, and
-// the keyboard side is complete).
-func (s *containers) UpdateMouse(tea.MouseMsg) (Screen, tea.Cmd, bool) {
-	return s, nil, false
+// UpdateMouse lets a left press select the clicked table row: the
+// exact parity of the up/down keys. Clicks outside the table fall
+// through to the shell.
+func (s *containers) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
+	event := tea.MouseEvent(msg)
+	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
+		return s, nil, false
+	}
+	if s.lastWidth <= 0 {
+		return s, nil, false
+	}
+	row, ok := tableRowAt(s.table, containerColumnsFor(s.lastWidth), event.X, event.Y)
+	if !ok {
+		return s, nil, false
+	}
+	// Move by the delta instead of SetCursor: the widget's SetCursor
+	// recomputes the window around the new cursor, while the move methods
+	// keep the visible window stable.
+	if delta := row - s.table.Cursor(); delta > 0 {
+		s.table.MoveDown(delta)
+	} else if delta < 0 {
+		s.table.MoveUp(-delta)
+	}
+	return s, nil, true
 }
 
 // applySort switches the sort column, flipping the direction when the
@@ -331,6 +349,7 @@ func (s *containers) reapply() {
 	} else {
 		s.table.SetCursor(0)
 	}
+	anchorTableCursor(&s.table)
 }
 
 // containerLess orders two containers on the active key. Name, image
@@ -418,8 +437,9 @@ func (s *containers) View(width, height int) string {
 	if s.filtering {
 		body--
 	}
-	if body > 0 {
+	if body > 0 && s.table.Height() != body-1 {
 		s.table.SetHeight(body)
+		anchorTableCursor(&s.table)
 	}
 
 	muted := lipgloss.NewStyle().Foreground(s.theme.Muted)

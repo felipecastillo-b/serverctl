@@ -421,3 +421,47 @@ func TestAccessVerdictRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestAccessClickSelectsRow(t *testing.T) {
+	s := newAccessScreen(t,
+		&fakeSessionLister{sessions: sessionsFixture},
+		&fakeAttemptLister{attempts: attemptsFixture})
+
+	for _, view := range []string{"sessions", "attempts"} {
+		s.View(100, 24)
+		if len(s.table.Rows()) < 2 {
+			t.Fatalf("%s: fixture needs at least two rows, got %d", view, len(s.table.Rows()))
+		}
+		if s.table.Cursor() != 0 {
+			t.Fatalf("%s: precondition cursor = %d, want 0", view, s.table.Cursor())
+		}
+
+		updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+		s = updated.(*access)
+		if !handled {
+			t.Fatalf("%s: a left press on a table row must be claimed", view)
+		}
+		if cmd != nil {
+			t.Errorf("%s: selecting a row must not emit a command", view)
+		}
+		if s.table.Cursor() != 1 {
+			t.Errorf("%s: cursor = %d, want the clicked row 1", view, s.table.Cursor())
+		}
+
+		if view == "attempts" {
+			break
+		}
+		updated, _, _ = s.UpdateKey(keyMsg("v"))
+		s = updated.(*access)
+	}
+
+	cursor := s.table.Cursor()
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 0))
+	s = updated.(*access)
+	if handled || cmd != nil {
+		t.Errorf("header press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if s.table.Cursor() != cursor {
+		t.Errorf("header press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+}

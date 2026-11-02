@@ -622,3 +622,47 @@ func TestNetworkStaleRoundAgesPerView(t *testing.T) {
 		t.Errorf("the ports view must render its healthy summary:\n%s", out)
 	}
 }
+
+func TestNetworkClickSelectsRow(t *testing.T) {
+	s := newNetworkScreen(t,
+		&fakeNetLister{ifaces: netFixture},
+		&fakeSockLister{listeners: portsFixture, conns: connsFixture})
+
+	for _, view := range []string{"interfaces", "ports", "connections"} {
+		s.View(100, 24)
+		if len(s.table.Rows()) < 2 {
+			t.Fatalf("%s: fixture needs at least two rows, got %d", view, len(s.table.Rows()))
+		}
+		if s.table.Cursor() != 0 {
+			t.Fatalf("%s: precondition cursor = %d, want 0", view, s.table.Cursor())
+		}
+
+		updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+		s = updated.(*network)
+		if !handled {
+			t.Fatalf("%s: a left press on a table row must be claimed", view)
+		}
+		if cmd != nil {
+			t.Errorf("%s: selecting a row must not emit a command", view)
+		}
+		if s.table.Cursor() != 1 {
+			t.Errorf("%s: cursor = %d, want the clicked row 1", view, s.table.Cursor())
+		}
+
+		if view == "connections" {
+			break
+		}
+		updated, _, _ = s.UpdateKey(keyMsg("v"))
+		s = updated.(*network)
+	}
+
+	cursor := s.table.Cursor()
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 0))
+	s = updated.(*network)
+	if handled || cmd != nil {
+		t.Errorf("header press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if s.table.Cursor() != cursor {
+		t.Errorf("header press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+}

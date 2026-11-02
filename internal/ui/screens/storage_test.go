@@ -483,3 +483,55 @@ func TestStorageStaleRoundAgesPerHalf(t *testing.T) {
 		t.Errorf("the healthy disks view must carry neither the fs error nor its age:\n%s", out)
 	}
 }
+
+func TestStorageClickSelectsRow(t *testing.T) {
+	s := newStorageScreen(t, &fakeStorageLister{filesystems: fsFixture, disks: diskFixture})
+	s.View(100, 24)
+	if len(s.table.Rows()) < 2 {
+		t.Fatalf("fixture needs at least two rows, got %d", len(s.table.Rows()))
+	}
+	if s.table.Cursor() != 0 {
+		t.Fatalf("precondition: cursor = %d, want 0", s.table.Cursor())
+	}
+
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+	s = updated.(*storage)
+	if !handled {
+		t.Fatal("a left press on a table row must be claimed")
+	}
+	if cmd != nil {
+		t.Error("selecting a row must not emit a command")
+	}
+	if s.table.Cursor() != 1 {
+		t.Errorf("cursor = %d, want the clicked row 1", s.table.Cursor())
+	}
+
+	// The disks view shares the mapping; `d` resets the cursor to the top.
+	updated, _, _ = s.UpdateKey(keyMsg("d"))
+	s = updated.(*storage)
+	s.View(100, 24)
+	if s.table.Cursor() != 0 {
+		t.Fatalf("after d: cursor = %d, want 0", s.table.Cursor())
+	}
+	updated, cmd, handled = s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+	s = updated.(*storage)
+	if !handled {
+		t.Fatal("a left press on a disks row must be claimed")
+	}
+	if cmd != nil {
+		t.Error("selecting a disks row must not emit a command")
+	}
+	if s.table.Cursor() != 1 {
+		t.Errorf("disks cursor = %d, want the clicked row 1", s.table.Cursor())
+	}
+
+	cursor := s.table.Cursor()
+	updated, cmd, handled = s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 0))
+	s = updated.(*storage)
+	if handled || cmd != nil {
+		t.Errorf("header press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if s.table.Cursor() != cursor {
+		t.Errorf("header press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+}

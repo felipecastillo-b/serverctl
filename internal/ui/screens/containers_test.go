@@ -442,3 +442,36 @@ func TestContainersTitleAndHints(t *testing.T) {
 		}
 	}
 }
+
+func TestContainersClickSelectsRow(t *testing.T) {
+	s := newContainersScreen(t, &fakeContainerLister{list: containerRound})
+	s.View(100, 24)
+	if len(s.table.Rows()) < 2 {
+		t.Fatalf("fixture needs at least two rows, got %d", len(s.table.Rows()))
+	}
+	if s.table.Cursor() != 0 {
+		t.Fatalf("precondition: cursor = %d, want 0", s.table.Cursor())
+	}
+
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+	s = updated.(*containers)
+	if !handled {
+		t.Fatal("a left press on a table row must be claimed")
+	}
+	if cmd != nil {
+		t.Error("selecting a row must not emit a command")
+	}
+	if s.table.Cursor() != 1 {
+		t.Errorf("cursor = %d, want the clicked row 1", s.table.Cursor())
+	}
+
+	cursor := s.table.Cursor()
+	updated, cmd, handled = s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 0))
+	s = updated.(*containers)
+	if handled || cmd != nil {
+		t.Errorf("header press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if s.table.Cursor() != cursor {
+		t.Errorf("header press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+}
