@@ -40,6 +40,9 @@ type Model struct {
 	screens  []screens.Screen
 	active   screens.ID
 	showHelp bool
+	// stack holds pushed screens; the top is the last element. Empty
+	// means the active module owns the pane.
+	stack []screens.Screen
 	// palette is the command palette overlay; a field (not a pointer)
 	// because Model runs on value receivers and tests mutate fields
 	// directly.
@@ -121,30 +124,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case screens.RefreshMsg:
 		m.now = time.Time(msg)
-		// Forward the refresh tick to the active screen; stub screens ignore
+		// Forward the refresh tick to the top screen; stub screens ignore
 		// it, live screens re-collect their data on it.
-		updated, cmd := m.screens[m.active].Update(msg)
-		m.screens[m.active] = updated
+		updated, cmd := m.topScreen().Update(msg)
+		m.setTop(updated)
 		return m, tea.Batch(cmd, m.tick())
+	case screens.OpenDetailMsg:
+		// A screen pushes a static detail; the app owns the stack, so
+		// the pushed screen's Init is the only command to return.
+		m.stack = append(m.stack, screens.NewDetail(msg.Title, msg.Lines))
+		return m, m.topScreen().Init()
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 	default:
 		// Every other message (screen data results, action outcomes, ...)
-		// belongs to the active screen. Swallowing them here once left the
+		// belongs to the top screen. Swallowing them here once left the
 		// dashboard stuck on "collecting..."; the router MUST forward.
-		updated, cmd := m.screens[m.active].Update(msg)
-		m.screens[m.active] = updated
+		updated, cmd := m.topScreen().Update(msg)
+		m.setTop(updated)
 		return m, cmd
 	}
 }
 
+// topScreen returns the screen that currently owns input and the content
+// pane: the last pushed screen when the stack is non-empty, otherwise the
+// active module.
+func (m Model) topScreen() screens.Screen {
+	if n := len(m.stack); n > 0 {
+		return m.stack[n-1]
+	}
+	return m.screens[m.active]
+}
+
+// setTop writes updated back to wherever topScreen came from.
+func (m Model) setTop(updated screens.Screen) {
+	if n := len(m.stack); n > 0 {
+		m.stack[n-1] = updated
+		return
+	}
+	m.screens[m.active] = updated
+}
+
 // handleKey applies the input rules of ARCHITECTURE.md §6. While the
 // help overlay or the command palette is open, it is modal: only the
-// overlay's keys act and everything else is swallowed. Otherwise the
-// active screen's keymap shadows the global one per key: sort, filter
-// and signal bindings are claimed before any global action can fire.
+// overlay's keys act and everything else is swallowed. Otherwise the top
+// screen's keymap shadows the global one per key: sort, filter and signal
+// bindings are claimed before any global action can fire.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		if key.Matches(msg, m.keys.Help, m.keys.Back) {
@@ -156,9 +183,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePaletteKey(msg)
 	}
 
-	updated, cmd, handled := m.screens[m.active].UpdateKey(msg)
+	updated, cmd, handled := m.topScreen().UpdateKey(msg)
 	if handled {
-		m.screens[m.active] = updated
+		m.setTop(updated)
 		return m, cmd
 	}
 
@@ -183,8 +210,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		updated, cmd := m.setActive(m.sidebar.Selected())
 		return updated, cmd
 	case key.Matches(msg, m.keys.Back):
-		// No-op at the top level: esc pops the screen stack once screens
-		// can push detail views (ARCHITECTURE.md §6, M2).
+		// esc pops one pushed screen. Emptying the stack hands the pane
+		// back to the module, which is re-initialized so its data is
+		// fresh; at the top level with no pushed screens this stays a
+		// no-op.
+		if len(m.stack) > 0 {
+			m.stack = m.stack[:len(m.stack)-1]
+			if len(m.stack) == 0 {
+				return m, m.screens[m.active].Init()
+			}
+			return m, nil
+		}
 	}
 	return m, nil
 }
@@ -239,9 +275,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	local := msg
 	local.X -= sidebar.Width
 	local.Y--
-	updated, cmd, handled := m.screens[m.active].UpdateMouse(local)
+	updated, cmd, handled := m.topScreen().UpdateMouse(local)
 	if handled {
-		m.screens[m.active] = updated
+		m.setTop(updated)
 		return m, cmd
 	}
 
@@ -269,6 +305,9 @@ func (m Model) cycle(delta int) screens.ID {
 func (m Model) setActive(id screens.ID) (Model, tea.Cmd) {
 	m.active = id
 	m.sidebar.SetSelected(id)
+	// A module switch abandons pushed details: the new module owns the
+	// pane from the base of a fresh stack.
+	m.stack = nil
 	return m, m.screens[m.active].Init()
 }
 
@@ -286,14 +325,14 @@ func (m Model) View() string {
 	var body string
 	switch {
 	case m.showHelp:
-		body = help.Overlay(m.keys.Bindings(), m.screens[m.active].Hints(),
+		body = help.Overlay(m.keys.Bindings(), m.topScreen().Hints(),
 			m.theme, m.width, contentHeight)
 	case m.palette.Open():
 		body = m.palette.View(m.width, contentHeight)
 	default:
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			m.sidebar.View(m.theme, contentHeight),
-			m.screens[m.active].View(m.contentWidth(), contentHeight),
+			m.topScreen().View(m.contentWidth(), contentHeight),
 		)
 	}
 
@@ -309,10 +348,10 @@ func (m Model) contentWidth() int {
 	return 0
 }
 
-// headerView renders the top bar with the program name and the active
+// headerView renders the top bar with the program name and the top
 // screen's title, styled with the theme's primary color.
 func (m Model) headerView() string {
-	title := fmt.Sprintf(" serverctl › %s", m.screens[m.active].Title())
+	title := fmt.Sprintf(" serverctl › %s", m.topScreen().Title())
 	return lipgloss.NewStyle().
 		Background(m.theme.Primary).
 		Foreground(m.theme.Background).

@@ -19,6 +19,13 @@ import (
 // screens, and the message contract must not create an import cycle.
 type RefreshMsg time.Time
 
+// OpenDetailMsg asks the shell to push a static detail screen onto the
+// navigation stack. Screens emit it as a command; the app owns the stack.
+type OpenDetailMsg struct {
+	Title string
+	Lines []string
+}
+
 // Cadences carries the refresh intervals of the nine self-ticked
 // collection chains of ARCHITECTURE.md §3 from the config layer to
 // the screen constructors. All() is the injection point: the app
