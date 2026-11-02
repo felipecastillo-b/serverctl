@@ -316,6 +316,48 @@ func TestProcessesMouseConfirmsModal(t *testing.T) {
 	}
 }
 
+func TestProcessesClickSelectsRow(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	p.View(100, 24)
+	if len(p.view) < 2 {
+		t.Fatalf("fixture needs at least two rows, got %d", len(p.view))
+	}
+	if p.table.Cursor() != 0 {
+		t.Fatalf("precondition: cursor = %d, want 0", p.table.Cursor())
+	}
+
+	updated, cmd, handled := p.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+	p = updated.(*processes)
+	if !handled {
+		t.Fatal("a left press on a table row must be claimed")
+	}
+	if cmd != nil {
+		t.Error("selecting a row must not emit a command")
+	}
+	if p.table.Cursor() != 1 {
+		t.Errorf("cursor = %d, want the clicked row 1", p.table.Cursor())
+	}
+
+	cursor := p.table.Cursor()
+	updated, cmd, handled = p.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 0))
+	p = updated.(*processes)
+	if handled || cmd != nil {
+		t.Errorf("header press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if p.table.Cursor() != cursor {
+		t.Errorf("header press moved the cursor to %d, want %d", p.table.Cursor(), cursor)
+	}
+
+	updated, cmd, handled = p.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 23))
+	p = updated.(*processes)
+	if handled || cmd != nil {
+		t.Errorf("status-line press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if p.table.Cursor() != cursor {
+		t.Errorf("status-line press moved the cursor to %d, want %d", p.table.Cursor(), cursor)
+	}
+}
+
 // TestProcessesStaleRoundAgesListing pins the §5 keeps-last-good
 // state on a RefreshMsg-driven screen: a failed round keeps the last
 // good listing standing while the status line carries the error plus
