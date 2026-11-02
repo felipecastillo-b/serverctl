@@ -35,29 +35,21 @@ type unitsDataMsg struct {
 	err      error
 }
 
-// unitResultMsg reports the outcome of one lifecycle verb.
-type unitResultMsg struct {
-	verb unitVerb
-	name string
-	err  error
-}
-
-// unitVerb is one of the three whitelisted lifecycle verbs. The manager
-// port has no generic method passthrough and neither does this screen.
-type unitVerb string
-
+// Short aliases for the exported lifecycle verbs: the screen and its
+// tests read better with the lower-case names, and the contract itself
+// lives in screens.go next to the process signal contract.
 const (
-	unitStart   unitVerb = "start"
-	unitStop    unitVerb = "stop"
-	unitRestart unitVerb = "restart"
+	unitStart   = UnitStart
+	unitStop    = UnitStop
+	unitRestart = UnitRestart
 )
 
-// action is the audit name of the verb — the same "service.*" namespace
+// Action is the audit name of the verb — the same "service.*" namespace
 // m4a's Actor writes its executed/failed entries under (§7).
-func (v unitVerb) action() string { return "service." + string(v) }
+func (v UnitAction) Action() string { return "service." + string(v) }
 
 // past is the completed-tense word for the status line.
-func (v unitVerb) past() string {
+func (v UnitAction) past() string {
 	switch v {
 	case unitStop:
 		return "stopped"
@@ -68,10 +60,10 @@ func (v unitVerb) past() string {
 	}
 }
 
-// question is the §7 confirmation prompt for the verb. Only stop and
+// Question is the §7 confirmation prompt for the verb. Only stop and
 // restart are gated — starting a unit is not destructive — but the
 // mapping keeps the full verb set honest.
-func (v unitVerb) question(name string) string {
+func (v UnitAction) Question(name string) string {
 	switch v {
 	case unitStop:
 		return fmt.Sprintf("Stop unit %s?", name)
@@ -121,7 +113,7 @@ type services struct {
 
 	modal     confirm.Model
 	modalOpen bool
-	modalVerb unitVerb // verb pending on the modal, with its target unit
+	modalVerb UnitAction // verb pending on the modal, with its target unit
 	modalUnit string
 
 	filter    textinput.Model
@@ -237,15 +229,18 @@ func (s *services) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			s.lastGood = time.Now()
 		}
 		s.reapply()
-	case unitResultMsg:
-		if msg.err != nil {
-			if needsPrivileges(msg.err) {
-				s.status = fmt.Sprintf("%s unit %s failed: needs privileges — allow via a polkit rule or an active local session", msg.verb, msg.name)
+	case UnitActionResultMsg:
+		switch {
+		case msg.Cancelled:
+			s.status = "canceled"
+		case msg.Err != nil:
+			if needsPrivileges(msg.Err) {
+				s.status = fmt.Sprintf("%s unit %s failed: needs privileges — allow via a polkit rule or an active local session", msg.Action, msg.Unit)
 			} else {
-				s.status = fmt.Sprintf("%s unit %s failed: %v", msg.verb, msg.name, msg.err)
+				s.status = fmt.Sprintf("%s unit %s failed: %v", msg.Action, msg.Unit, msg.Err)
 			}
-		} else {
-			s.status = fmt.Sprintf("%s %s", msg.verb.past(), msg.name)
+		default:
+			s.status = fmt.Sprintf("%s %s", msg.Action.past(), msg.Unit)
 		}
 	}
 	return s, nil
@@ -390,6 +385,15 @@ func (s *services) openDetail() tea.Cmd {
 	}
 }
 
+// UnitTarget implements UnitTargeter: it reports the cursor's unit so the
+// shell can offer palette lifecycle actions for the selected row.
+func (s *services) UnitTarget() (UnitTarget, bool) {
+	if len(s.view) == 0 {
+		return UnitTarget{}, false
+	}
+	return UnitTarget{Name: s.view[s.table.Cursor()].Name}, true
+}
+
 // startUnit starts the cursor's unit directly: starting a service is
 // not destructive, so §7's confirmation gate does not apply to it. The
 // manager call runs as a tea.Cmd; m4a's Actor audits the executed or
@@ -405,13 +409,13 @@ func (s *services) startUnit() tea.Cmd {
 // requestLifecycle opens the §7 confirmation modal for verb on the
 // selected unit: stop and restart can take a machine down, so they only
 // run behind an explicit answer.
-func (s *services) requestLifecycle(verb unitVerb) tea.Cmd {
+func (s *services) requestLifecycle(verb UnitAction) tea.Cmd {
 	if len(s.view) == 0 {
 		s.status = "no unit selected"
 		return nil
 	}
 	name := s.view[s.table.Cursor()].Name
-	s.modal.Reset(verb.question(name))
+	s.modal.Reset(verb.Question(name))
 	s.modalOpen = true
 	s.modalVerb = verb
 	s.modalUnit = name
@@ -432,13 +436,13 @@ func (s *services) resolveModal() tea.Cmd {
 	case confirm.Confirmed:
 		verb, name := s.modalVerb, s.modalUnit
 		s.modalOpen = false
-		_ = actions.Record(verb.action(), name, "confirmed", "")
+		_ = actions.Record(verb.Action(), name, "confirmed", "")
 		return s.runUnit(verb, name)
 	case confirm.Denied:
 		verb, name := s.modalVerb, s.modalUnit
 		s.modalOpen = false
 		s.status = "canceled"
-		if err := actions.Record(verb.action(), name, "denied", ""); err != nil {
+		if err := actions.Record(verb.Action(), name, "denied", ""); err != nil {
 			s.status = fmt.Sprintf("canceled, audit log write failed: %v", err)
 		}
 	}
@@ -446,8 +450,8 @@ func (s *services) resolveModal() tea.Cmd {
 }
 
 // runUnit dispatches one lifecycle verb through the manager port; the
-// outcome rides back as a unitResultMsg for the status line.
-func (s *services) runUnit(verb unitVerb, name string) tea.Cmd {
+// outcome rides back as a UnitActionResultMsg for the status line.
+func (s *services) runUnit(verb UnitAction, name string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		switch verb {
@@ -458,7 +462,7 @@ func (s *services) runUnit(verb unitVerb, name string) tea.Cmd {
 		default:
 			err = s.manager.Start(name)
 		}
-		return unitResultMsg{verb: verb, name: name, err: err}
+		return UnitActionResultMsg{Action: verb, Unit: name, Err: err}
 	}
 }
 

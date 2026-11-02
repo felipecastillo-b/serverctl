@@ -47,6 +47,35 @@ type ProcessSignalResultMsg struct {
 	Cancelled bool
 }
 
+// UnitAction is one of the three whitelisted unit lifecycle verbs.
+type UnitAction string
+
+const (
+	UnitStart   UnitAction = "start"
+	UnitStop    UnitAction = "stop"
+	UnitRestart UnitAction = "restart"
+)
+
+// UnitTarget is the unit a palette action can target.
+type UnitTarget struct {
+	Name string
+}
+
+// UnitTargeter lets the shell offer lifecycle actions for the active
+// screen's selected unit.
+type UnitTargeter interface {
+	UnitTarget() (UnitTarget, bool)
+}
+
+// UnitActionResultMsg reports a lifecycle outcome to the screen that owns
+// the unit listing.
+type UnitActionResultMsg struct {
+	Action    UnitAction
+	Unit      string
+	Err       error
+	Cancelled bool
+}
+
 // Cadences carries the refresh intervals of the nine self-ticked
 // collection chains of ARCHITECTURE.md §3 from the config layer to
 // the screen constructors. All() is the injection point: the app
