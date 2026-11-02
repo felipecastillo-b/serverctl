@@ -227,7 +227,8 @@ func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManage
 		table.WithFocused(true),
 		table.WithKeyMap(navKeyMap()),
 		table.WithStyles(table.Styles{
-			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary),
+			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary).PaddingRight(1),
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
 			Selected: lipgloss.NewStyle().
 				Foreground(th.Background).Background(th.Primary),
 		}),
@@ -254,8 +255,9 @@ func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManage
 // unitColumnsFor lays out the units table for a given width; the
 // DESCRIPTION column absorbs whatever is left.
 func unitColumnsFor(width int) []table.Column {
-	// 28 unit + 10 active + 10 sub + 10 enabled are fixed.
-	desc := width - 58
+	// 28 unit + 10 active + 10 sub + 10 enabled are fixed, plus one
+	// gutter cell per column.
+	desc := width - 58 - 5
 	if desc < 8 {
 		desc = 8
 	}

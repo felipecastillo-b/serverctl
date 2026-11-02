@@ -212,7 +212,8 @@ func newStorage(lister core.StorageLister, th theme.Theme, interval time.Duratio
 		table.WithFocused(true),
 		table.WithKeyMap(navKeyMap()),
 		table.WithStyles(table.Styles{
-			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary),
+			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary).PaddingRight(1),
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
 			Selected: lipgloss.NewStyle().
 				Foreground(th.Background).Background(th.Primary),
 		}),
@@ -237,12 +238,12 @@ func newStorage(lister core.StorageLister, th theme.Theme, interval time.Duratio
 }
 
 // fsColumnsFor lays out the filesystems table for a given width; the
-// MOUNT column absorbs whatever is left (60 cells are fixed).
+// MOUNT column absorbs whatever is left (60 fixed + 7 gutter cells).
 // SIZE/USED/AVAIL need 10 cells: format.Bytes renders "100.0 GiB",
 // and a narrower column would clip the unit off every filesystem
 // larger than 100 GiB.
 func fsColumnsFor(width int) []table.Column {
-	mount := width - 60
+	mount := width - 60 - 7
 	if mount < 8 {
 		mount = 8
 	}
@@ -259,9 +260,9 @@ func fsColumnsFor(width int) []table.Column {
 
 // diskColumnsFor lays out the disks table for a given width; the
 // MODEL column absorbs what is left, floored at its nominal 24 cells
-// (46 are fixed).
+// (46 fixed + 6 gutter cells).
 func diskColumnsFor(width int) []table.Column {
-	model := width - 46
+	model := width - 46 - 6
 	if model < 24 {
 		model = 24
 	}

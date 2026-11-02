@@ -274,7 +274,8 @@ func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifa
 		table.WithFocused(true),
 		table.WithKeyMap(navKeyMap()),
 		table.WithStyles(table.Styles{
-			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary),
+			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary).PaddingRight(1),
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
 			Selected: lipgloss.NewStyle().
 				Foreground(th.Background).Background(th.Primary),
 		}),
@@ -312,7 +313,7 @@ func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifa
 // "/s"), and the m5a SIZE column lesson applies: the column fits the
 // format, not the other way round.
 func ifaceColumnsFor(width int) []table.Column {
-	addrs := width - 56
+	addrs := width - 56 - 7 // 56 fixed + 7 gutter cells
 	if addrs < 8 {
 		addrs = 8
 	}
@@ -328,9 +329,9 @@ func ifaceColumnsFor(width int) []table.Column {
 }
 
 // portColumnsFor lays out the ports table for a given width; the ADDR
-// column absorbs what is left (40 cells are fixed).
+// column absorbs what is left (40 fixed + 5 gutter cells).
 func portColumnsFor(width int) []table.Column {
-	addr := width - 40
+	addr := width - 40 - 5
 	if addr < 8 {
 		addr = 8
 	}
@@ -344,10 +345,10 @@ func portColumnsFor(width int) []table.Column {
 }
 
 // connColumnsFor lays out the connections table for a given width;
-// the REMOTE column absorbs what is left (46 are fixed) so LOCAL and
+// the REMOTE column absorbs what is left (46 fixed + 4 gutter cells) so LOCAL and
 // STATE keep room for a v6 endpoint and a state name.
 func connColumnsFor(width int) []table.Column {
-	remote := width - 46
+	remote := width - 46 - 4
 	if remote < 8 {
 		remote = 8
 	}

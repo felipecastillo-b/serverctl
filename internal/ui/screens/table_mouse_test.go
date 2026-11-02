@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // mouseTable builds the 20-row, one-column table the mapping tests click
@@ -22,9 +23,12 @@ func mouseTable(t *testing.T, height int) table.Model {
 		table.WithColumns(cols),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithStyles(table.Styles{}),
+		table.WithStyles(table.Styles{
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
+			Header: lipgloss.NewStyle().PaddingRight(1),
+		}),
 	)
-	tbl.SetWidth(8)
+	tbl.SetWidth(9)
 	tbl.SetHeight(height)
 	return tbl
 }

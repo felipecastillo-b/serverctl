@@ -24,11 +24,11 @@ func anchorTableCursor(tbl *table.Model) {
 }
 
 // plainTableRow renders row as the table widget renders an unselected
-// row: every visible column padded to its width, cells joined and the
-// trailing padding trimmed. The screens leave table.Styles.Cell zero and
-// already clip their cell values to the column width, so no truncation
-// is applied here. A screen that ever sets a cell style with padding
-// must teach this helper that style too.
+// row: every visible column padded to its width, a one-cell right gutter
+// (the screens set table.Styles.Cell to PaddingRight(1)), cells joined
+// and the trailing padding trimmed. The screens already clip their cell
+// values to the column width, so no truncation is applied here. A screen
+// that changes the cell style must teach this helper that style too.
 func plainTableRow(row table.Row, cols []table.Column) string {
 	var b strings.Builder
 	for i, col := range cols {
@@ -39,8 +39,8 @@ func plainTableRow(row table.Row, cols []table.Column) string {
 		if i < len(row) {
 			value = row[i]
 		}
-		style := lipgloss.NewStyle().Width(col.Width).MaxWidth(col.Width).Inline(true)
-		b.WriteString(style.Render(value))
+		inner := lipgloss.NewStyle().Width(col.Width).MaxWidth(col.Width).Inline(true).Render(value)
+		b.WriteString(lipgloss.NewStyle().PaddingRight(1).Render(inner))
 	}
 	return strings.TrimRight(b.String(), " ")
 }

@@ -1,9 +1,9 @@
-UNIT                        ACTIVE    SUB       ENABLED   DESCRIPTION                               
-mysql.service               failed    exit-code enabled   MySQL database                            
-alpha.service               activatingstart     static    activating alpha                          
-nginx.service               active    running   enabled   A high performance web server             
-sshd.service                active    running   enabled   OpenSSH server                            
-postgres.service            inactive  dead      disabled  PostgreSQL database                       
+UNIT                         ACTIVE     SUB        ENABLED    DESCRIPTION                           
+mysql.service                failed     exit-code  enabled    MySQL database                        
+alpha.service                activating start      static     activating alpha                      
+nginx.service                active     running    enabled    A high performance web server         
+sshd.service                 active     running    enabled    OpenSSH server                        
+postgres.service             inactive   dead       disabled   PostgreSQL database                   
                                                                                                     
                                                                                                     
                                                                                                     
