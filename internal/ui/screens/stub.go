@@ -19,7 +19,6 @@ var catalog = []stub{
 	{id: Packages, title: "Packages", description: "Installed package count, distro and package manager."},
 	{id: Users, title: "Users", description: "Logged-in users, active sessions and recent SSH attempts."},
 	{id: Containers, title: "Containers", description: "Docker and Podman containers from the local socket: name, state, image and uptime."},
-	{id: Health, title: "Health", description: "SMART disk health from the optional smartctl binary: verdict, temperature and power-on time."},
 }
 
 // stub is a placeholder screen shown while the real module screens are
