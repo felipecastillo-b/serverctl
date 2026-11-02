@@ -234,6 +234,8 @@ func (p *processes) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	}
 
 	switch msg.String() {
+	case "enter":
+		return p, p.openDetail(), true
 	case "/":
 		p.filtering = true
 		p.filter.Focus()
@@ -292,6 +294,38 @@ func (p *processes) requestSignal(sig actions.ProcessSignal) tea.Cmd {
 	p.modalSig = sig
 	p.status = ""
 	return nil
+}
+
+// openDetail emits the static detail for the cursor's process.
+func (p *processes) openDetail() tea.Cmd {
+	if len(p.view) == 0 {
+		p.status = "no process selected"
+		return nil
+	}
+	row := p.view[p.table.Cursor()]
+	started := "unknown"
+	if !row.StartTime.IsZero() {
+		started = row.StartTime.Format("2006-01-02 15:04:05")
+	}
+	command := row.Cmdline
+	if command == "" {
+		command = row.Name
+	}
+	fields := [][2]string{
+		{"PID", strconv.Itoa(row.PID)},
+		{"Parent", strconv.Itoa(row.PPID)},
+		{"User", row.User},
+		{"State", string(row.State)},
+		{"CPU", fmt.Sprintf("%.1f%%", row.CpuPct)},
+		{"Memory", format.Bytes(row.RSS)},
+		{"Started", started},
+		{"Command", command},
+	}
+	title := fmt.Sprintf("Process %d (%s)", row.PID, row.Name)
+	lines := renderDetailFields(fields)
+	return func() tea.Msg {
+		return OpenDetailMsg{Title: title, Lines: lines}
+	}
 }
 
 // resolveModal closes the modal once decided and dispatches the confirmed
@@ -451,6 +485,7 @@ func (p *processes) Title() string { return "Processes" }
 // it below the global section.
 func (p *processes) Hints() []key.Binding {
 	return []key.Binding{
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open detail")),
 		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "send TERM")),
 		key.NewBinding(key.WithKeys("k"), key.WithHelp("k", "send KILL")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "sort by cpu")),

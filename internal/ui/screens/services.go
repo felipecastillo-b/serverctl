@@ -304,6 +304,8 @@ func (s *services) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	}
 
 	switch msg.String() {
+	case "enter":
+		return s, s.openDetail(), true
 	case "/":
 		s.filtering = true
 		s.filter.Focus()
@@ -344,6 +346,28 @@ func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	}
 	s.modal.UpdateMouse(msg)
 	return s, s.resolveModal(), true
+}
+
+// openDetail emits the static detail for the cursor's unit.
+func (s *services) openDetail() tea.Cmd {
+	if len(s.view) == 0 {
+		s.status = "no unit selected"
+		return nil
+	}
+	row := s.view[s.table.Cursor()]
+	fields := [][2]string{
+		{"Unit", row.Name},
+		{"Description", row.Description},
+		{"Load", row.Load},
+		{"Active", row.Active},
+		{"Sub", row.Sub},
+		{"File state", row.FileState},
+	}
+	title := "Unit " + row.Name
+	lines := renderDetailFields(fields)
+	return func() tea.Msg {
+		return OpenDetailMsg{Title: title, Lines: lines}
+	}
 }
 
 // startUnit starts the cursor's unit directly: starting a service is
@@ -566,6 +590,7 @@ func (s *services) Title() string { return "Services" }
 // shows it below the global section.
 func (s *services) Hints() []key.Binding {
 	return []key.Binding{
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open detail")),
 		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "start")),
 		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),

@@ -91,6 +91,38 @@ func TestModuleSwitchClearsTheStack(t *testing.T) {
 	}
 }
 
+// TestProcessesEnterOpensDetailStack drives the S3 drill-down end to
+// end: enter on the selected process row emits the detail message, the
+// shell pushes it onto the S2 stack and renders it, and esc pops back to
+// the processes table.
+func TestProcessesEnterOpensDetailStack(t *testing.T) {
+	m := newProcessesModel(t)
+
+	m, cmd := send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter on a selected row must emit the detail command")
+	}
+	m, _ = send(t, m, cmd())
+	if len(m.stack) != 1 {
+		t.Fatalf("stack length = %d, want 1", len(m.stack))
+	}
+	view := m.View()
+	if !strings.Contains(view, "PID:") {
+		t.Fatalf("detail view missing the aligned fields:\n%s", view)
+	}
+	if !strings.Contains(view, "kthreadd") {
+		t.Fatalf("detail view missing the selected fixture process:\n%s", view)
+	}
+
+	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if len(m.stack) != 0 {
+		t.Fatalf("esc must pop the detail, stack length = %d", len(m.stack))
+	}
+	if view := m.View(); !strings.Contains(view, "CPU%") {
+		t.Fatalf("esc must return to the processes table:\n%s", view)
+	}
+}
+
 func TestHelpShowsTopScreenHints(t *testing.T) {
 	m := pushDetail(t)
 
