@@ -99,7 +99,14 @@ func genEntries(n int, prefix string, startIndex int) []core.JournalEntry {
 // tea.Batch-laziness discovery, at the Logs cadence).
 func newLogsScreen(t *testing.T, reader core.JournalReader) *logs {
 	t.Helper()
-	s := newLogs(reader, theme.Dark(), defaultLogsInterval)
+	return newLogsScreenWith(t, reader, nil)
+}
+
+// newLogsScreenWith is newLogsScreen with explicit screen_keys
+// overrides.
+func newLogsScreenWith(t *testing.T, reader core.JournalReader, overrides map[string]string) *logs {
+	t.Helper()
+	s := newLogs(reader, theme.Dark(), defaultLogsInterval, overrides)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must tail and start the cadence")
@@ -250,6 +257,33 @@ func TestLogsFollowPauseAndResume(t *testing.T) {
 	}
 }
 
+func TestLogsKeyOverridesApply(t *testing.T) {
+	s := newLogsScreenWith(t, &fakeJournal{tail: logFixture, tailCursor: "c3"},
+		map[string]string{"follow": "F"})
+
+	if !s.follow {
+		t.Fatal("a fresh tail must follow")
+	}
+
+	// The default follow key is no longer claimed: f is not a viewport
+	// nav key, so it falls through to the global keymap.
+	if _, _, handled := s.UpdateKey(keyMsg("f")); handled {
+		t.Fatal("f must not be claimed after rebinding follow to F")
+	}
+	if !s.follow {
+		t.Fatal("an unclaimed f must leave following on")
+	}
+
+	updated, _, handled := s.UpdateKey(keyMsg("F"))
+	s = updated.(*logs)
+	if !handled {
+		t.Fatal("F must be claimed as the overridden follow key")
+	}
+	if s.follow {
+		t.Fatal("F must toggle following off")
+	}
+}
+
 func TestLogsFilter(t *testing.T) {
 	s := newLogsScreen(t, &fakeJournal{tail: logFixture, tailCursor: "c3"})
 
@@ -310,13 +344,13 @@ func TestLogsFilter(t *testing.T) {
 
 func TestLogsStatusStates(t *testing.T) {
 	// Before the first round lands: collecting.
-	fresh := newLogs(&fakeJournal{}, theme.Dark(), defaultLogsInterval)
+	fresh := newLogs(&fakeJournal{}, theme.Dark(), defaultLogsInterval, nil)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("unloaded screen must say collecting...:\n%s", out)
 	}
 
 	// A failed round shows the error.
-	failing := newLogs(&fakeJournal{tailErr: errors.New("no journal")}, theme.Dark(), defaultLogsInterval)
+	failing := newLogs(&fakeJournal{tailErr: errors.New("no journal")}, theme.Dark(), defaultLogsInterval, nil)
 	updated, _ := failing.Update(failing.tail()())
 	failing = updated.(*logs)
 	if out := failing.View(100, 24); !strings.Contains(out, "n/a (no journal)") {

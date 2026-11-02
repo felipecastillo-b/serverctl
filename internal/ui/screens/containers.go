@@ -2,6 +2,8 @@ package screens
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -49,6 +51,69 @@ const (
 	containerSortUptime containerSortKey = "uptime"
 )
 
+// containerKeys holds the configurable actions of the Containers screen.
+type containerKeys struct {
+	Filter, SortName, SortState, SortImage, SortUptime, ClearFilter key.Binding
+}
+
+// defaultContainersKeys returns the built-in containers bindings.
+func defaultContainersKeys() containerKeys {
+	return containerKeys{
+		Filter:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		SortName:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name")),
+		SortState:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by state")),
+		SortImage:   key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "sort by image")),
+		SortUptime:  key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "sort by uptime")),
+		ClearFilter: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear filter")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *containerKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"filter":       &k.Filter,
+		"sort_name":    &k.SortName,
+		"sort_state":   &k.SortState,
+		"sort_image":   &k.SortImage,
+		"sort_uptime":  &k.SortUptime,
+		"clear_filter": &k.ClearFilter,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *containerKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "containers", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "containers", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order.
+func (k *containerKeys) hints() []key.Binding {
+	return []key.Binding{
+		k.SortName, k.SortState, k.SortImage, k.SortUptime, k.Filter, k.ClearFilter,
+	}
+}
+
 // containers is the Containers screen: the local Docker-compatible
 // daemon's containers as name, state, image and uptime. The screen is
 // read-only by design (ARCHITECTURE.md §7): it observes the daemon and
@@ -60,6 +125,8 @@ const (
 type containers struct {
 	lister core.ContainerLister
 	theme  theme.Theme
+
+	keys containerKeys
 
 	// interval is the screen's own refresh cadence; lastGood is the
 	// instant of its last successful round, the keeps-last-good
@@ -93,14 +160,17 @@ type containers struct {
 // implements core.ContainerLister over the local unix socket — and the
 // resolved containers cadence; tests inject fakes (ARCHITECTURE.md §2:
 // the UI consumes ports). A non-positive interval falls back to the
-// built-in §3 default.
-func NewContainers(lister core.ContainerLister, th theme.Theme, interval time.Duration) Screen {
-	return newContainers(lister, th, interval)
+// built-in §3 default. overrides are the screen's entries of the
+// config's screen_keys section.
+func NewContainers(lister core.ContainerLister, th theme.Theme, interval time.Duration,
+	overrides map[string]string) Screen {
+	return newContainers(lister, th, interval, overrides)
 }
 
 // newContainers is the concrete constructor; tests use it for white-box
 // state assertions.
-func newContainers(lister core.ContainerLister, th theme.Theme, interval time.Duration) *containers {
+func newContainers(lister core.ContainerLister, th theme.Theme, interval time.Duration,
+	overrides map[string]string) *containers {
 	if interval <= 0 {
 		interval = defaultContainersInterval
 	}
@@ -120,11 +190,15 @@ func newContainers(lister core.ContainerLister, th theme.Theme, interval time.Du
 		}),
 	)
 
+	keys := defaultContainersKeys()
+	_ = keys.apply(overrides)
+
 	return &containers{
 		lister: lister,
 		theme:  th,
 		table:  tbl,
 		filter: filter,
+		keys:   keys,
 		// Name ascending is the natural first sort of a container
 		// listing: the row an operator looks for is the one they
 		// named, not the one with the most CPU or age.
@@ -226,20 +300,20 @@ func (s *containers) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return s, cmd, true
 	}
 
-	switch msg.String() {
-	case "/":
+	switch {
+	case key.Matches(msg, s.keys.Filter):
 		s.filtering = true
 		s.filter.Focus()
 		return s, nil, true
-	case "n":
+	case key.Matches(msg, s.keys.SortName):
 		s.applySort(containerSortName)
-	case "s":
+	case key.Matches(msg, s.keys.SortState):
 		s.applySort(containerSortState)
-	case "i":
+	case key.Matches(msg, s.keys.SortImage):
 		s.applySort(containerSortImage)
-	case "u":
+	case key.Matches(msg, s.keys.SortUptime):
 		s.applySort(containerSortUptime)
-	case "esc":
+	case key.Matches(msg, s.keys.ClearFilter):
 		if strings.TrimSpace(s.filter.Value()) == "" {
 			return s, nil, false
 		}
@@ -413,14 +487,7 @@ func (s *containers) Title() string { return "Containers" }
 // Hints implements Screen: the containers keymap as the help overlay
 // shows it below the global section.
 func (s *containers) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name")),
-		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by state")),
-		key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "sort by image")),
-		key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "sort by uptime")),
-		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear filter")),
-	}
+	return s.keys.hints()
 }
 
 // View renders the table with a filter line and a status line.

@@ -92,7 +92,15 @@ var dockerOnDisk = core.Service{
 // runtime territory, driving it here would stall the test.
 func newServicesScreen(t *testing.T, lister core.UnitLister, manager core.UnitManager) *services {
 	t.Helper()
-	s := newServices(lister, theme.Dark(), manager, defaultServicesInterval)
+	return newServicesScreenWith(t, lister, manager, nil)
+}
+
+// newServicesScreenWith is newServicesScreen with explicit screen_keys
+// overrides.
+func newServicesScreenWith(t *testing.T, lister core.UnitLister, manager core.UnitManager,
+	overrides map[string]string) *services {
+	t.Helper()
+	s := newServices(lister, theme.Dark(), manager, defaultServicesInterval, overrides)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must collect and start the cadence")
@@ -203,6 +211,42 @@ func TestServicesSorting(t *testing.T) {
 		if got := unitNames(s.view); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: order = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestServicesKeyOverridesApply(t *testing.T) {
+	s := newServicesScreenWith(t, &fakeLister{units: unitFixture}, &fakeManager{},
+		map[string]string{"sort_name": "N"})
+
+	// The default name-sort key is no longer claimed: n is not a table
+	// nav key, so it falls through to the global keymap.
+	if _, _, handled := s.UpdateKey(keyMsg("n")); handled {
+		t.Fatal("n must not be claimed after rebinding sort_name to N")
+	}
+
+	// N is the overridden name sort. The initial attention order proves
+	// the press reordered the view.
+	updated, _, handled := s.UpdateKey(keyMsg("N"))
+	s = updated.(*services)
+	if !handled {
+		t.Fatal("N must be claimed as the overridden name sort")
+	}
+	if s.sortKey != unitSortName {
+		t.Fatalf("sort key = %v, want name after N", s.sortKey)
+	}
+	want := []string{"alpha.service", "mysql.service", "nginx.service", "postgres.service", "sshd.service"}
+	if got := unitNames(s.view); !slices.Equal(got, want) {
+		t.Errorf("order after N = %v, want %v", got, want)
+	}
+
+	found := false
+	for _, b := range s.Hints() {
+		if b.Help().Key == "N" && b.Help().Desc == "sort by name" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Hints() = %v, want a binding showing N and sort by name", s.Hints())
 	}
 }
 
@@ -613,7 +657,7 @@ func TestServicesTickRearmsOwnCadence(t *testing.T) {
 }
 
 func TestServicesListerErrorShowsNA(t *testing.T) {
-	s := newServices(&fakeLister{err: errors.New("no system bus")}, theme.Dark(), &fakeManager{}, defaultServicesInterval)
+	s := newServices(&fakeLister{err: errors.New("no system bus")}, theme.Dark(), &fakeManager{}, defaultServicesInterval, nil)
 	updated, _ := s.Update(s.collect()())
 	s = updated.(*services)
 	if s.collectErr == nil || s.loaded {

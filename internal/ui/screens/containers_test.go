@@ -76,7 +76,15 @@ func driveContainers(t *testing.T, s *containers, cmd tea.Cmd) *containers {
 // timer leg would stall the test.
 func newContainersScreen(t *testing.T, lister *fakeContainerLister) *containers {
 	t.Helper()
-	s := newContainers(lister, theme.Dark(), defaultContainersInterval)
+	return newContainersScreenWith(t, lister, nil)
+}
+
+// newContainersScreenWith is newContainersScreen with explicit
+// screen_keys overrides.
+func newContainersScreenWith(t *testing.T, lister *fakeContainerLister,
+	overrides map[string]string) *containers {
+	t.Helper()
+	s := newContainers(lister, theme.Dark(), defaultContainersInterval, overrides)
 	s.now = func() time.Time { return containerNow }
 	cmd := s.Init()
 	if cmd == nil {
@@ -136,7 +144,7 @@ func TestContainersInitRendersListing(t *testing.T) {
 // TestContainersCollectingState pins the pre-round footer: the screen
 // is collecting, not empty and not failed.
 func TestContainersCollectingState(t *testing.T) {
-	s := newContainers(&fakeContainerLister{}, theme.Dark(), defaultContainersInterval)
+	s := newContainers(&fakeContainerLister{}, theme.Dark(), defaultContainersInterval, nil)
 	out := s.View(100, 24)
 	if !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh screen must show collecting..., got:\n%s", out)
@@ -151,7 +159,7 @@ func TestContainersCollectingState(t *testing.T) {
 // good listing to keep.
 func TestContainersFirstRoundError(t *testing.T) {
 	s := newContainers(&fakeContainerLister{err: errors.New("no container socket")},
-		theme.Dark(), defaultContainersInterval)
+		theme.Dark(), defaultContainersInterval, nil)
 	updated, _ := s.Update(s.collect()())
 	s = updated.(*containers)
 
@@ -251,6 +259,32 @@ func TestContainersSorting(t *testing.T) {
 		if got := containerNames(s.view); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: order = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestContainersKeyOverridesApply(t *testing.T) {
+	s := newContainersScreenWith(t, &fakeContainerLister{list: containerRound},
+		map[string]string{"sort_state": "S"})
+
+	// The default state-sort key is no longer claimed: s is not a table
+	// nav key, so it falls through to the global keymap.
+	if _, _, handled := s.UpdateKey(keyMsg("s")); handled {
+		t.Fatal("s must not be claimed after rebinding sort_state to S")
+	}
+	if s.sortKey != containerSortName {
+		t.Fatalf("an unclaimed s must leave the name sort, got %v", s.sortKey)
+	}
+
+	updated, _, handled := s.UpdateKey(keyMsg("S"))
+	s = updated.(*containers)
+	if !handled {
+		t.Fatal("S must be claimed as the overridden state sort")
+	}
+	if s.sortKey != containerSortState {
+		t.Fatalf("sort key = %v, want state after S", s.sortKey)
+	}
+	if got := containerNames(s.view); !slices.Equal(got, []string{"Cache", "web", "db"}) {
+		t.Errorf("order after S = %v, want state ascending", got)
 	}
 }
 
@@ -421,7 +455,7 @@ func TestContainersKeysFallThrough(t *testing.T) {
 }
 
 func TestContainersTitleAndHints(t *testing.T) {
-	s := newContainers(&fakeContainerLister{}, theme.Dark(), defaultContainersInterval)
+	s := newContainers(&fakeContainerLister{}, theme.Dark(), defaultContainersInterval, nil)
 	if got := s.Title(); got != "Containers" {
 		t.Errorf("Title() = %q, want Containers", got)
 	}

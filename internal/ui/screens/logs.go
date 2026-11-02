@@ -3,6 +3,8 @@ package screens
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,6 +48,68 @@ type entriesMsg struct {
 	err     error
 }
 
+// logsKeys holds the configurable actions of the logs screen.
+type logsKeys struct {
+	Filter, Follow, Enter key.Binding
+}
+
+// defaultLogsKeys returns the built-in logs bindings.
+func defaultLogsKeys() logsKeys {
+	return logsKeys{
+		Filter: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		Follow: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
+		Enter:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open entry")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *logsKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"filter": &k.Filter,
+		"follow": &k.Follow,
+		"enter":  &k.Enter,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *logsKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "logs", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "logs", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order; the two navigation
+// bindings between follow and enter are built-in and fixed.
+func (k *logsKeys) hints() []key.Binding {
+	return []key.Binding{
+		k.Filter,
+		k.Follow,
+		key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll")),
+		key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "page")),
+		k.Enter,
+	}
+}
+
 // logs is the journal tail screen: the live log view collected through
 // the JournalReader port with follow/pause scrolling and a
 // client-side filter over unit and message.
@@ -62,6 +126,8 @@ type logs struct {
 	theme  theme.Theme
 
 	interval time.Duration // the screen's own follow cadence
+
+	keys logsKeys
 
 	entries []core.JournalEntry // consumed buffer, oldest first
 	view    []core.JournalEntry // filtered slice backing the viewport
@@ -86,14 +152,17 @@ type logs struct {
 // and rendering with th. All() passes the live collectors.System and
 // the resolved logs cadence; tests inject fakes (ARCHITECTURE.md §2:
 // the UI consumes ports). A non-positive interval falls back to the
-// built-in §3 default.
-func NewLogs(reader core.JournalReader, th theme.Theme, interval time.Duration) Screen {
-	return newLogs(reader, th, interval)
+// built-in §3 default. overrides are the screen's entries of the
+// config's screen_keys section.
+func NewLogs(reader core.JournalReader, th theme.Theme, interval time.Duration,
+	overrides map[string]string) Screen {
+	return newLogs(reader, th, interval, overrides)
 }
 
 // newLogs is the concrete constructor; tests use it for white-box
 // state assertions.
-func newLogs(reader core.JournalReader, th theme.Theme, interval time.Duration) *logs {
+func newLogs(reader core.JournalReader, th theme.Theme, interval time.Duration,
+	overrides map[string]string) *logs {
 	if interval <= 0 {
 		interval = defaultLogsInterval
 	}
@@ -114,11 +183,15 @@ func newLogs(reader core.JournalReader, th theme.Theme, interval time.Duration) 
 		Up:           key.NewBinding(key.WithKeys("up")),
 	}
 
+	keys := defaultLogsKeys()
+	_ = keys.apply(overrides)
+
 	return &logs{
 		reader: reader,
 		theme:  th,
 		vp:     vp,
 		filter: filter,
+		keys:   keys,
 		// A log tail starts at the bottom and stays there until the
 		// user scrolls away.
 		follow:   true,
@@ -221,15 +294,15 @@ func (s *logs) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return s, cmd, true
 	}
 
-	switch msg.String() {
-	case "/":
+	switch {
+	case key.Matches(msg, s.keys.Filter):
 		s.filtering = true
 		s.filter.Focus()
 		return s, nil, true
-	case "f":
+	case key.Matches(msg, s.keys.Follow):
 		s.follow = !s.follow
 		return s, nil, true
-	case "enter":
+	case key.Matches(msg, s.keys.Enter):
 		return s, s.openFocused(), true
 	default:
 		// Only the navigation keys the viewport actually consumes are
@@ -405,13 +478,7 @@ func (s *logs) Title() string { return "Logs" }
 // Hints implements Screen: the logs keymap as the help overlay shows
 // it below the global section.
 func (s *logs) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
-		key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll")),
-		key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "page")),
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open entry")),
-	}
+	return s.keys.hints()
 }
 
 // View renders the log viewport with a filter line and a status line.
