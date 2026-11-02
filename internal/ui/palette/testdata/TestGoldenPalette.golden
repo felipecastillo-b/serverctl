@@ -1,0 +1,24 @@
+                                                                                
+                                                                                
+                   ╭───────────────────────────────────────╮                    
+                   │                                       │                    
+                   │  Command Palette                      │                    
+                   │                                       │                    
+                   │  > type to filter                     │                    
+                   │                                       │                    
+                   │    Dashboard                          │                    
+                   │    Processes                          │                    
+                   │    Services                           │                    
+                   │    Logs                               │                    
+                   │    Storage                            │                    
+                   │    Network                            │                    
+                   │    Packages                           │                    
+                   │    Users                              │                    
+                   │    Containers                         │                    
+                   │    Send TERM to pid 2 (kthreadd)      │                    
+                   │                                       │                    
+                   │  ↑/↓ move · enter select · esc close  │                    
+                   │                                       │                    
+                   ╰───────────────────────────────────────╯                    
+                                                                                
+                                                                                

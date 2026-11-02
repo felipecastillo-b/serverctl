@@ -1,0 +1,5 @@
+PID:       2
+Parent:    0
+User:      root
+State:     S
+Command:   [kthreadd]
