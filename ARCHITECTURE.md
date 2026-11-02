@@ -161,6 +161,21 @@ type ContainerList struct {
     Runtime    string // "docker" or "podman" — provenance from the socket
     Containers []Container
 }
+type DiskHealth struct { // M12: read-only SMART observation via optional smartctl
+    Device       string // /dev/sda
+    Model        string // smartctl model_name, fallback to the sysfs disk model
+    Protocol     string // ATA, NVMe, SCSI
+    Passed       bool
+    HasVerdict   bool   // smart_status present; absent rows list as UNKNOWN
+    TemperatureC int
+    HasTemp      bool   // presence flags: a real 0 is a value, absent is unknown
+    PowerOnHours uint64
+    HasPowerOn   bool
+}
+type DiskHealthReport struct {
+    Disks       []DiskHealth
+    ToolVersion string // smartctl provenance ("7.5"); "" when unknown
+}
 ```
 
 ## 5. Event & update system

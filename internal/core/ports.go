@@ -52,6 +52,23 @@ type JournalReader interface {
 // is to re-Tail from the head.
 var ErrStaleCursor = errors.New("journal cursor is stale: entry rotated out of the journal")
 
+// SMART unavailability sentinels: the Health module's typed states
+// for an optional external tool. smartctl is not a hard dependency —
+// when any of these matches, the screen shows an actionable hint
+// line instead of the generic degradation path.
+var (
+	// ErrSmartctlMissing reports that the smartctl binary was not
+	// found on PATH: smartmontools is not installed.
+	ErrSmartctlMissing = errors.New("smartctl is not installed")
+	// ErrSmartctlUnsupported reports a smartctl too old for JSON
+	// output; the -j flag arrived in 7.0.
+	ErrSmartctlUnsupported = errors.New("smartctl 7.0 or newer is required for JSON output")
+	// ErrSmartUnprivileged reports that SMART reads were refused for
+	// lack of privilege: they need root or CAP_SYS_RAWIO, and
+	// serverctl deliberately never escalates.
+	ErrSmartUnprivileged = errors.New("SMART requires root or CAP_SYS_RAWIO")
+)
+
 // StorageLister is the Storage module's read port: the block devices
 // and mounted filesystems the Storage screen lists. collectors.System
 // implements it over /proc/mounts, statfs and /proc/diskstats
@@ -135,6 +152,25 @@ type ContainerLister interface {
 	// Containers returns every container the local daemon reports,
 	// in daemon order, labeled with the runtime it came from.
 	Containers() (ContainerList, error)
+}
+
+// DiskHealthLister is the Health module's read port: the physical
+// disks' SMART health, read from the optional smartctl binary
+// (smartmontools). The port is optional-tool-shaped: a host without
+// smartctl is the typed ErrSmartctlMissing, never a crash; a
+// smartctl older than 7.0 — the first release with JSON output — is
+// ErrSmartctlUnsupported; and a round whose devices all refuse to
+// open for lack of privilege is ErrSmartUnprivileged (SMART reads
+// need root or CAP_SYS_RAWIO, and serverctl never escalates). The
+// collector owns the probing policy — scan first, then one read per
+// device, fixed argv and bounded — and a per-device failure may
+// surface as a row without a verdict rather than failing the whole
+// round. An empty listing is legitimate (a host with no SMART
+// devices), never an error (ARCHITECTURE.md §3, §4, §8).
+type DiskHealthLister interface {
+	// DiskHealth returns the SMART health of the host's physical
+	// disks, in scan order, labeled with the smartctl version.
+	DiskHealth() (DiskHealthReport, error)
 }
 
 // SessionLister is the Users module's sessions read port: the
