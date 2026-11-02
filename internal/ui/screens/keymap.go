@@ -28,12 +28,24 @@ var screenKeySlots = map[string]func() map[string]*key.Binding{
 		k := defaultContainersKeys()
 		return k.slots()
 	},
+	"storage": func() map[string]*key.Binding {
+		k := defaultStorageKeys()
+		return k.slots()
+	},
+	"network": func() map[string]*key.Binding {
+		k := defaultNetworkKeys()
+		return k.slots()
+	},
+	"users": func() map[string]*key.Binding {
+		k := defaultAccessKeys()
+		return k.slots()
+	},
 }
 
 // ValidateScreenKeys checks the screen-local keybinding overrides before
 // the TUI starts: every screen and action name must exist and every key
-// must be non-blank. Navigation keys (table and viewport movement) remain
-// built-in for now and are not configurable through the screen_keys
+// must be non-blank. Navigation keys (table and viewport movement) are
+// built-in and deliberately not configurable through the screen_keys
 // section; only the actions registered in screenKeySlots are.
 func ValidateScreenKeys(overrides map[string]map[string]string) error {
 	screens := slices.Sorted(maps.Keys(screenKeySlots))

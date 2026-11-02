@@ -2,6 +2,8 @@ package screens
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,6 +73,57 @@ func (v accessView) String() string {
 // screen's layout, so timestamps read identically across screens.
 const accessTimeLayout = "Jan 02 15:04:05"
 
+// accessKeys holds the configurable actions of the Users screen.
+type accessKeys struct {
+	CycleView key.Binding
+}
+
+// defaultAccessKeys returns the built-in Users bindings.
+func defaultAccessKeys() accessKeys {
+	return accessKeys{
+		CycleView: key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "sessions/attempts view")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *accessKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"cycle_view": &k.CycleView,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *accessKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "users", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "users", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order.
+func (k *accessKeys) hints() []key.Binding {
+	return []key.Binding{k.CycleView}
+}
+
 // access is the Users screen: the login sessions and recent SSH
 // attempts of m6b's collectors, cycled by `v`, one table per view
 // with per-view loading/error state (§5). Read-only by design
@@ -79,6 +132,8 @@ type access struct {
 	sessions core.SessionLister
 	attempts core.SSHAttemptLister
 	theme    theme.Theme
+
+	keys accessKeys
 
 	// The two chain intervals, one per self-armed cadence; the
 	// per-half lastGood instants are the keeps-last-good bookkeeping
@@ -107,14 +162,17 @@ type access struct {
 // All() passes the live collectors.System for both ports and both
 // chain intervals; tests inject fakes (ARCHITECTURE.md §2: the UI
 // consumes ports). A non-positive interval falls back to that chain's
-// built-in §3 default.
-func NewAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme, sessionsInterval, attemptsInterval time.Duration) Screen {
-	return newAccess(sessions, attempts, th, sessionsInterval, attemptsInterval)
+// built-in §3 default. overrides are the screen's entries of the
+// config's screen_keys section.
+func NewAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme, sessionsInterval, attemptsInterval time.Duration,
+	overrides map[string]string) Screen {
+	return newAccess(sessions, attempts, th, sessionsInterval, attemptsInterval, overrides)
 }
 
 // newAccess is the concrete constructor; tests use it for white-box
 // state assertions.
-func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme, sessionsInterval, attemptsInterval time.Duration) *access {
+func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th theme.Theme, sessionsInterval, attemptsInterval time.Duration,
+	overrides map[string]string) *access {
 	if sessionsInterval <= 0 {
 		sessionsInterval = defaultSessionsInterval
 	}
@@ -132,11 +190,15 @@ func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th t
 		}),
 	)
 
+	keys := defaultAccessKeys()
+	_ = keys.apply(overrides)
+
 	return &access{
 		sessions:         sessions,
 		attempts:         attempts,
 		theme:            th,
 		table:            tbl,
+		keys:             keys,
 		lastWidth:        -1,
 		sessionsInterval: sessionsInterval,
 		attemptsInterval: attemptsInterval,
@@ -261,11 +323,11 @@ func (s *access) collectAttempts() tea.Cmd {
 
 // UpdateKey applies the screen's keymap, which shadows the global
 // one per key (ARCHITECTURE.md §6: q quits, ? helps, tab cycles —
-// those still fall through; v is claimed here). The table's
-// navigation bindings are claimed for the cursor; everything else
-// falls through (§6 shadowing is per-key, not wholesale).
+// those still fall through; the view cycle is claimed here). The
+// table's navigation bindings are claimed for the cursor; everything
+// else falls through (§6 shadowing is per-key, not wholesale).
 func (s *access) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
-	if msg.String() == "v" {
+	if key.Matches(msg, s.keys.CycleView) {
 		s.cycleView()
 		return s, nil, true
 	}
@@ -448,13 +510,13 @@ func (s *access) Title() string { return "Users" }
 // shows it below the global section. The navigation keys are listed
 // because the screen claims them — the help overlay is where the
 // user learns why up/down move the table here and the sidebar
-// elsewhere (the logs screen's convention).
+// elsewhere (the logs screen's convention); they remain built-in and
+// are not configurable through screen_keys.
 func (s *access) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "sessions/attempts view")),
+	return append(s.keys.hints(),
 		key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "move")),
 		key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "page")),
-	}
+	)
 }
 
 // View renders the active table with a status line (the network

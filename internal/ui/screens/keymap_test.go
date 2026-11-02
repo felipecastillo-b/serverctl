@@ -25,6 +25,17 @@ func TestValidateScreenKeysAcceptsServicesLogsContainersOverrides(t *testing.T) 
 	}
 }
 
+func TestValidateScreenKeysAcceptsStorageNetworkUsersOverrides(t *testing.T) {
+	err := ValidateScreenKeys(map[string]map[string]string{
+		"storage": {"toggle_view": "V", "sort_mount": "M"},
+		"network": {"cycle_view": "V", "sort_local": "L"},
+		"users":   {"cycle_view": "V"},
+	})
+	if err != nil {
+		t.Fatalf("valid overrides rejected: %v", err)
+	}
+}
+
 func TestValidateScreenKeysRejectsUnknownScreen(t *testing.T) {
 	err := ValidateScreenKeys(map[string]map[string]string{
 		"nope": {"kill": "K"},
@@ -52,6 +63,18 @@ func TestValidateScreenKeysRejectsUnknownAction(t *testing.T) {
 func TestValidateScreenKeysRejectsUnknownServicesAction(t *testing.T) {
 	err := ValidateScreenKeys(map[string]map[string]string{
 		"services": {"nuke": "K"},
+	})
+	if err == nil {
+		t.Fatal("unknown action must be rejected")
+	}
+	if !strings.Contains(err.Error(), "nuke") {
+		t.Errorf("error %q must name the unknown action", err)
+	}
+}
+
+func TestValidateScreenKeysRejectsUnknownNetworkAction(t *testing.T) {
+	err := ValidateScreenKeys(map[string]map[string]string{
+		"network": {"nuke": "K"},
 	})
 	if err == nil {
 		t.Fatal("unknown action must be rejected")

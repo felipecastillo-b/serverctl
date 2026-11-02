@@ -93,7 +93,15 @@ var connsFixture = []core.Connection{
 // territory, driving them here would stall the test.
 func newNetworkScreen(t *testing.T, net *fakeNetLister, socks *fakeSockLister) *network {
 	t.Helper()
-	s := newNetwork(net, socks, theme.Dark(), defaultNetInterval, defaultSocksInterval)
+	return newNetworkScreenWith(t, net, socks, nil)
+}
+
+// newNetworkScreenWith is newNetworkScreen with explicit screen_keys
+// overrides.
+func newNetworkScreenWith(t *testing.T, net *fakeNetLister, socks *fakeSockLister,
+	overrides map[string]string) *network {
+	t.Helper()
+	s := newNetwork(net, socks, theme.Dark(), defaultNetInterval, defaultSocksInterval, overrides)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must start both chains and collect both listings")
@@ -238,6 +246,35 @@ func TestNetworkViewCyclesWithV(t *testing.T) {
 		if _, _, handled := s.UpdateKey(keyMsg(k)); handled {
 			t.Errorf("key %q must fall through to the global keymap", k)
 		}
+	}
+}
+
+func TestNetworkKeyOverridesApply(t *testing.T) {
+	s := newNetworkScreenWith(t,
+		&fakeNetLister{ifaces: netFixture},
+		&fakeSockLister{listeners: portsFixture, conns: connsFixture},
+		map[string]string{"cycle_view": "V"})
+
+	if s.view != netInterfaces {
+		t.Fatalf("fresh view = %v, want interfaces", s.view)
+	}
+
+	// The default cycle key is no longer claimed: v is not a table nav
+	// key, so it falls through to the global keymap.
+	if _, _, handled := s.UpdateKey(keyMsg("v")); handled {
+		t.Fatal("v must not be claimed after rebinding cycle_view to V")
+	}
+	if s.view != netInterfaces {
+		t.Fatal("an unclaimed v must leave the interfaces view")
+	}
+
+	updated, _, handled := s.UpdateKey(keyMsg("V"))
+	s = updated.(*network)
+	if !handled {
+		t.Fatal("V must be claimed as the overridden view cycle")
+	}
+	if s.view != netPorts {
+		t.Fatalf("view = %v, want ports after V", s.view)
 	}
 }
 
@@ -504,7 +541,7 @@ func TestNetworkConnectionsSortAndFilter(t *testing.T) {
 // first round lands, and the listing summary.
 func TestNetworkErrorAndCollectingStates(t *testing.T) {
 	// Before any round: collecting.
-	fresh := newNetwork(&fakeNetLister{}, &fakeSockLister{}, theme.Dark(), defaultNetInterval, defaultSocksInterval)
+	fresh := newNetwork(&fakeNetLister{}, &fakeSockLister{}, theme.Dark(), defaultNetInterval, defaultSocksInterval, nil)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh screen must show collecting..., got:\n%s", out)
 	}
@@ -512,7 +549,7 @@ func TestNetworkErrorAndCollectingStates(t *testing.T) {
 	// A round with a failed interfaces half and healthy sockets.
 	net := &fakeNetLister{err: errors.New("no netlink")}
 	socks := &fakeSockLister{listeners: portsFixture, conns: connsFixture}
-	s := newNetwork(net, socks, theme.Dark(), defaultNetInterval, defaultSocksInterval)
+	s := newNetwork(net, socks, theme.Dark(), defaultNetInterval, defaultSocksInterval, nil)
 	cmd := s.Init()
 	batch := cmd().(tea.BatchMsg)
 	updated, _ := s.Update(batch[0]())
@@ -547,7 +584,7 @@ func TestNetworkErrorAndCollectingStates(t *testing.T) {
 	// A failed listeners half: the ports view errors, the connections
 	// view of the same round stays healthy.
 	socks = &fakeSockLister{listenErr: errors.New("no proc net tcp"), conns: connsFixture}
-	s = newNetwork(&fakeNetLister{ifaces: netFixture}, socks, theme.Dark(), defaultNetInterval, defaultSocksInterval)
+	s = newNetwork(&fakeNetLister{ifaces: netFixture}, socks, theme.Dark(), defaultNetInterval, defaultSocksInterval, nil)
 	cmd = s.Init()
 	batch = cmd().(tea.BatchMsg)
 	updated, _ = s.Update(batch[1]())

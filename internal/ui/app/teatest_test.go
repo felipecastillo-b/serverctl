@@ -308,7 +308,7 @@ func newUsersTestModel(t *testing.T) *teatest.TestModel {
 	m := New(cfg)
 	// 0 = the built-in default cadences (see the packages smoke above).
 	m.screens[screens.Users] = screens.NewAccess(fakeSessionLister{}, fakeSSHAttemptLister{},
-		theme.FromName(cfg.Theme), 0, 0)
+		theme.FromName(cfg.Theme), 0, 0, nil)
 	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 30))
 }
 

@@ -205,13 +205,14 @@ func All(th theme.Theme, sys collectors.System, cad Cadences,
 		case Storage:
 			// collectors.System implements core.StorageLister over
 			// /proc/mounts, statfs and /proc/diskstats (m5a).
-			out[i] = NewStorage(sys, th, cad.Storage)
+			out[i] = NewStorage(sys, th, cad.Storage, screenKeys["storage"])
 		case Network:
 			// collectors.System implements core.NetLister over
 			// /proc/net/dev + netlink and core.SocketLister over
 			// /proc/net/{tcp,tcp6,udp,udp6} (m5b). Both chain
 			// intervals: interfaces and sockets.
-			out[i] = NewNetwork(sys, sys, th, cad.NetworkInterfaces, cad.NetworkSockets)
+			out[i] = NewNetwork(sys, sys, th, cad.NetworkInterfaces, cad.NetworkSockets,
+				screenKeys["network"])
 		case Packages:
 			// collectors.System implements core.PackageCounter over
 			// the pacman local database with a `pacman -Qq` fixed-argv
@@ -222,7 +223,8 @@ func All(th theme.Theme, sys collectors.System, cad Cadences,
 			// logind D-Bus with a utmp fallback, and
 			// core.SSHAttemptLister over the sshd unit's journal
 			// (m6b). Both chain intervals: sessions and attempts.
-			out[i] = NewAccess(sys, sys, th, cad.UsersSessions, cad.UsersAttempts)
+			out[i] = NewAccess(sys, sys, th, cad.UsersSessions, cad.UsersAttempts,
+				screenKeys["users"])
 		case Containers:
 			// collectors.System implements core.ContainerLister over
 			// the local Docker-compatible unix socket (m10b).

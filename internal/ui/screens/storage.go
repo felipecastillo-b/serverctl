@@ -2,7 +2,9 @@ package screens
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,6 +80,69 @@ func (k fsSortKey) String() string {
 	}
 }
 
+// storageKeys holds the configurable actions of the Storage screen.
+type storageKeys struct {
+	ToggleView, Filter, SortUse, SortMount, SortSize, SortName key.Binding
+}
+
+// defaultStorageKeys returns the built-in storage bindings.
+func defaultStorageKeys() storageKeys {
+	return storageKeys{
+		ToggleView: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "disks/filesystems view")),
+		Filter:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		SortUse:    key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "sort by use%")),
+		SortMount:  key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "sort by mount")),
+		SortSize:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by size")),
+		SortName:   key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name (disks)")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *storageKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"toggle_view": &k.ToggleView,
+		"filter":      &k.Filter,
+		"sort_use":    &k.SortUse,
+		"sort_mount":  &k.SortMount,
+		"sort_size":   &k.SortSize,
+		"sort_name":   &k.SortName,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *storageKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "storage", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "storage", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order.
+func (k *storageKeys) hints() []key.Binding {
+	return []key.Binding{
+		k.ToggleView, k.Filter, k.SortUse, k.SortMount, k.SortSize, k.SortName,
+	}
+}
+
 // storage is the Storage screen: the mounted-filesystems and block
 // device listings collected by m5a's collector, with per-view filter,
 // sort and cursor-keeping reapply. Read-only by design
@@ -85,6 +150,8 @@ func (k fsSortKey) String() string {
 type storage struct {
 	lister core.StorageLister
 	theme  theme.Theme
+
+	keys storageKeys
 
 	// interval is the screen's own refresh cadence; the per-half
 	// lastGood instants are the keeps-last-good bookkeeping of §5: a
@@ -121,14 +188,17 @@ type storage struct {
 // through lister and rendering with th. All() passes the live
 // collectors.System and the resolved storage cadence; tests inject
 // fakes (ARCHITECTURE.md §2: the UI consumes ports). A non-positive
-// interval falls back to the built-in §3 default.
-func NewStorage(lister core.StorageLister, th theme.Theme, interval time.Duration) Screen {
-	return newStorage(lister, th, interval)
+// interval falls back to the built-in §3 default. overrides are the
+// screen's entries of the config's screen_keys section.
+func NewStorage(lister core.StorageLister, th theme.Theme, interval time.Duration,
+	overrides map[string]string) Screen {
+	return newStorage(lister, th, interval, overrides)
 }
 
 // newStorage is the concrete constructor; tests use it for white-box
 // state assertions.
-func newStorage(lister core.StorageLister, th theme.Theme, interval time.Duration) *storage {
+func newStorage(lister core.StorageLister, th theme.Theme, interval time.Duration,
+	overrides map[string]string) *storage {
 	if interval <= 0 {
 		interval = defaultStorageInterval
 	}
@@ -148,11 +218,15 @@ func newStorage(lister core.StorageLister, th theme.Theme, interval time.Duratio
 		}),
 	)
 
+	keys := defaultStorageKeys()
+	_ = keys.apply(overrides)
+
 	return &storage{
 		lister: lister,
 		theme:  th,
 		table:  tbl,
 		filter: filter,
+		keys:   keys,
 		// The attention sort is the natural first sort of a storage
 		// monitor: the fullest filesystem is the one needing eyes.
 		fsSort:    fsSortUse,
@@ -271,8 +345,9 @@ func (s *storage) collect() tea.Cmd {
 // those still fall through; sort, filter and view keys are claimed
 // here). Filter mode is exclusive: while open it consumes every key.
 // The view toggle and the filter key are shared by both views; the
-// sort keys belong to their view — m/u/s order filesystems, n orders
-// disks — so a keypress means what the visible table says it means.
+// sort bindings belong to their view — use/mount/size order
+// filesystems, name orders disks — so a keypress means what the
+// visible table says it means.
 func (s *storage) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	if s.filtering {
 		switch msg.String() {
@@ -287,19 +362,19 @@ func (s *storage) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return s, cmd, true
 	}
 
-	switch msg.String() {
-	case "d":
+	switch {
+	case key.Matches(msg, s.keys.ToggleView):
 		s.toggleView()
 		return s, nil, true
-	case "/":
+	case key.Matches(msg, s.keys.Filter):
 		s.filtering = true
 		s.filter.Focus()
 		return s, nil, true
 	}
 
 	if s.view == storageDisks {
-		switch msg.String() {
-		case "n":
+		switch {
+		case key.Matches(msg, s.keys.SortName):
 			s.diskDesc = !s.diskDesc
 			s.reapply()
 		default:
@@ -308,12 +383,12 @@ func (s *storage) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return s, nil, true
 	}
 
-	switch msg.String() {
-	case "m":
+	switch {
+	case key.Matches(msg, s.keys.SortMount):
 		s.applyFsSort(fsSortMount)
-	case "u":
+	case key.Matches(msg, s.keys.SortUse):
 		s.applyFsSort(fsSortUse)
-	case "s":
+	case key.Matches(msg, s.keys.SortSize):
 		s.applyFsSort(fsSortSize)
 	default:
 		return s.claimNav(msg)
@@ -602,17 +677,9 @@ func diskRowsFor(disks []core.Disk, width int) []table.Row {
 func (s *storage) Title() string { return "Storage" }
 
 // Hints implements Screen: the storage keymap as the help overlay
-// shows it below the global section. Sort keys are listed with their
-// view in the hint text since m/u/s and n belong to different views.
+// shows it below the global section.
 func (s *storage) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "disks/filesystems view")),
-		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "sort by use%")),
-		key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "sort by mount")),
-		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by size")),
-		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name (disks)")),
-	}
+	return s.keys.hints()
 }
 
 // View renders the active table with a filter line and a status line.

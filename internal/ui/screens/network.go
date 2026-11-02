@@ -2,6 +2,8 @@ package screens
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -120,6 +122,74 @@ func (k connSortKey) String() string {
 	}
 }
 
+// networkKeys holds the configurable actions of the Network screen.
+type networkKeys struct {
+	CycleView, Filter, SortName, SortRx, SortTx, SortPort, SortState, SortLocal key.Binding
+}
+
+// defaultNetworkKeys returns the built-in network bindings.
+func defaultNetworkKeys() networkKeys {
+	return networkKeys{
+		CycleView: key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "interfaces/ports/connections view")),
+		Filter:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		SortName:  key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name (interfaces)")),
+		SortRx:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "sort by rx/s (interfaces)")),
+		SortTx:    key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "sort by tx/s (interfaces)")),
+		SortPort:  key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "sort by port (ports)")),
+		SortState: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by state (connections)")),
+		SortLocal: key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "sort by local (connections)")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *networkKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"cycle_view": &k.CycleView,
+		"filter":     &k.Filter,
+		"sort_name":  &k.SortName,
+		"sort_rx":    &k.SortRx,
+		"sort_tx":    &k.SortTx,
+		"sort_port":  &k.SortPort,
+		"sort_state": &k.SortState,
+		"sort_local": &k.SortLocal,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *networkKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "network", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "network", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order.
+func (k *networkKeys) hints() []key.Binding {
+	return []key.Binding{
+		k.CycleView, k.Filter, k.SortName, k.SortRx, k.SortTx,
+		k.SortPort, k.SortState, k.SortLocal,
+	}
+}
+
 // network is the Network screen: the interfaces, listening ports and
 // connections listings of m5b's collectors, cycled by `v`, with
 // per-view filter, sort and cursor-keeping reapply. Read-only by
@@ -129,6 +199,8 @@ type network struct {
 	socks   core.SocketLister
 	theme   theme.Theme
 	tracker collectors.NetTracker
+
+	keys networkKeys
 
 	// The two chain intervals, one per self-armed cadence; the three
 	// per-listing lastGood instants are the keeps-last-good
@@ -175,14 +247,17 @@ type network struct {
 // collectors.System for both ports and both chain intervals; tests
 // inject fakes (ARCHITECTURE.md §2: the UI consumes ports). A
 // non-positive interval falls back to that chain's built-in §3
-// default.
-func NewNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifaceInterval, sockInterval time.Duration) Screen {
-	return newNetwork(net, socks, th, ifaceInterval, sockInterval)
+// default. overrides are the screen's entries of the config's
+// screen_keys section.
+func NewNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifaceInterval, sockInterval time.Duration,
+	overrides map[string]string) Screen {
+	return newNetwork(net, socks, th, ifaceInterval, sockInterval, overrides)
 }
 
 // newNetwork is the concrete constructor; tests use it for white-box
 // state assertions.
-func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifaceInterval, sockInterval time.Duration) *network {
+func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifaceInterval, sockInterval time.Duration,
+	overrides map[string]string) *network {
 	if ifaceInterval <= 0 {
 		ifaceInterval = defaultNetInterval
 	}
@@ -205,12 +280,16 @@ func newNetwork(net core.NetLister, socks core.SocketLister, th theme.Theme, ifa
 		}),
 	)
 
+	keys := defaultNetworkKeys()
+	_ = keys.apply(overrides)
+
 	return &network{
 		net:    net,
 		socks:  socks,
 		theme:  th,
 		table:  tbl,
 		filter: filter,
+		keys:   keys,
 		// Name is the natural first sort of an interface listing: a
 		// stable, predictable baseline; the rates are one keypress
 		// away and start descending (attention direction).
@@ -395,8 +474,7 @@ func (s *network) collectSocks() tea.Cmd {
 // those still fall through; the view, filter and sort keys are
 // claimed here). Filter mode is exclusive: while open it consumes
 // every key. The view cycle and the filter key are shared by all
-// three views; the sort keys belong to their view — n/r/t order
-// interfaces, p orders ports, s/l order connections — so a keypress
+// three views; the sort bindings belong to their view, so a keypress
 // means what the visible table says it means.
 func (s *network) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	if s.filtering {
@@ -412,11 +490,11 @@ func (s *network) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return s, cmd, true
 	}
 
-	switch msg.String() {
-	case "v":
+	switch {
+	case key.Matches(msg, s.keys.CycleView):
 		s.cycleView()
 		return s, nil, true
-	case "/":
+	case key.Matches(msg, s.keys.Filter):
 		s.filtering = true
 		s.filter.Focus()
 		return s, nil, true
@@ -424,28 +502,28 @@ func (s *network) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 
 	switch s.view {
 	case netPorts:
-		if msg.String() == "p" {
+		if key.Matches(msg, s.keys.SortPort) {
 			s.portDesc = !s.portDesc
 			s.reapply()
 			return s, nil, true
 		}
 	case netConnections:
-		switch msg.String() {
-		case "s":
+		switch {
+		case key.Matches(msg, s.keys.SortState):
 			s.applyConnSort(connSortState)
-		case "l":
+		case key.Matches(msg, s.keys.SortLocal):
 			s.applyConnSort(connSortLocal)
 		default:
 			return s.claimNav(msg)
 		}
 		return s, nil, true
 	default:
-		switch msg.String() {
-		case "n":
+		switch {
+		case key.Matches(msg, s.keys.SortName):
 			s.applyIfaceSort(ifaceSortName)
-		case "r":
+		case key.Matches(msg, s.keys.SortRx):
 			s.applyIfaceSort(ifaceSortRx)
-		case "t":
+		case key.Matches(msg, s.keys.SortTx):
 			s.applyIfaceSort(ifaceSortTx)
 		default:
 			return s.claimNav(msg)
@@ -903,20 +981,9 @@ func connRowsFor(conns []core.Connection, width int) []table.Row {
 func (s *network) Title() string { return "Network" }
 
 // Hints implements Screen: the network keymap as the help overlay
-// shows it below the global section. Sort keys are listed with their
-// view in the hint text since n/r/t, p and s/l belong to different
-// views.
+// shows it below the global section.
 func (s *network) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "interfaces/ports/connections view")),
-		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name (interfaces)")),
-		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "sort by rx/s (interfaces)")),
-		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "sort by tx/s (interfaces)")),
-		key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "sort by port (ports)")),
-		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort by state (connections)")),
-		key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "sort by local (connections)")),
-	}
+	return s.keys.hints()
 }
 
 // View renders the active table with a filter line and a status line.
