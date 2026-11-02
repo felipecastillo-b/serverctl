@@ -96,6 +96,7 @@ func cadences(cfg config.Config) screens.Cadences {
 		UsersSessions:     cfg.Cadence(config.IntervalUsersSessions),
 		UsersAttempts:     cfg.Cadence(config.IntervalUsersAttempts),
 		Containers:        cfg.Cadence(config.IntervalContainers),
+		Health:            cfg.Cadence(config.IntervalHealth),
 	}
 }
 

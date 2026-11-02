@@ -107,6 +107,7 @@ issue labeled `bug`.
 | Packages | dpkg/rpm adapters are fixture-tested only — no live Debian/RHEL host in the loop | environment |
 | Access | wtmp fallback rows are successful remote logins only; they cannot prove the service was SSH | by design |
 | Containers | Local Docker-compatible unix socket only; lifecycle actions, remote daemons and detail views are out of scope | by design |
+| Health | SMART reads require root or `CAP_SYS_RAWIO`; serverctl never escalates and shows a hint instead | by design |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
@@ -117,7 +118,7 @@ become one GitHub Issue.
 
 ### M12 — Hardware health
 
-- [ ] SMART disk health via optional `smartctl` (read-only: pass/fail plus key
+- [x] SMART disk health via optional `smartctl` (read-only: pass/fail plus key
       attributes).
 - [ ] Sensor depth: extend the chip tier table from field reports; evaluate
       fan/voltage readings.

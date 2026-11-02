@@ -27,6 +27,7 @@ func TestDefaultCadencesMatchBuiltinConstants(t *testing.T) {
 		UsersSessions:     10 * time.Second,
 		UsersAttempts:     30 * time.Second,
 		Containers:        10 * time.Second,
+		Health:            60 * time.Second,
 	}
 	if cad != want {
 		t.Errorf("DefaultCadences() = %+v, want %+v", cad, want)
@@ -48,6 +49,7 @@ func TestAllInjectsCadences(t *testing.T) {
 	cad.UsersSessions = 14 * time.Second
 	cad.UsersAttempts = 15 * time.Second
 	cad.Containers = 16 * time.Second
+	cad.Health = 17 * time.Second
 
 	list := All(theme.Dark(), collectors.New("/nonexistent-fixtures"), cad)
 
@@ -71,6 +73,9 @@ func TestAllInjectsCadences(t *testing.T) {
 	}
 	if s := list[Containers].(*containers); s.interval != 16*time.Second {
 		t.Errorf("containers interval = %v, want 16s", s.interval)
+	}
+	if s := list[Health].(*health); s.interval != 17*time.Second {
+		t.Errorf("health interval = %v, want 17s", s.interval)
 	}
 }
 
@@ -103,6 +108,9 @@ func TestAllDefaultsWhenCadencesZero(t *testing.T) {
 	}
 	if s := list[Containers].(*containers); s.interval != want.Containers {
 		t.Errorf("containers interval = %v, want the default %v", s.interval, want.Containers)
+	}
+	if s := list[Health].(*health); s.interval != want.Health {
+		t.Errorf("health interval = %v, want the default %v", s.interval, want.Health)
 	}
 }
 

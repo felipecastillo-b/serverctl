@@ -19,8 +19,8 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 > sensor detection; v0.2.1 hardened the release pipeline and UI; v0.3.0 added
 > portability; v0.4.0 added containers.** The binary launches the full TUI:
 > dashboard, processes, services and journal logs, storage, network, packages,
-> access audit, and containers, with a command palette, keyboard and mouse
-> control, and dark/light themes. Grab it from the
+> access audit, containers and disk health, with a command palette, keyboard and
+> mouse control, and dark/light themes. Grab it from the
 > [releases page](https://github.com/felipecastillo-b/serverctl/releases) —
 > [ROADMAP.md](ROADMAP.md) tracks what is next.
 
@@ -36,6 +36,9 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 - Users and login sessions (logind D-Bus, utmp fallback)
 - SSH login attempt audit (journal, auth log and wtmp fallbacks)
 - Containers: Docker and Podman listings from the local socket, with state, image and uptime
+- Health: SMART disk health via the optional `smartctl` — PASSED/FAILED verdict,
+  temperature and power-on time, with a clear in-app hint when the package is
+  missing or the process is unprivileged
 - Hardware sensors via hwmon, ordered by dashboard usefulness
 
 ## Requirements
