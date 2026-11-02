@@ -175,7 +175,7 @@ type ContainerList struct {
 - Sidebar switches modules; screens form a stack (e.g., logs → filtered unit view), `esc` pops back.
 - The shell owns the stack of pushed screens: input and rendering go to the top entry while the sidebar selection stays on the base module. A module switch clears the stack; `esc` pops one entry and re-inits the module when the stack empties.
 - Global keymap (quit, palette, help, sidebar focus) is shadowed by the active screen's keymap (sort, filter, signal).
-- Command palette jumps to any module by fuzzy name (keyboard-only, like the help overlay) and lists context process actions (TERM/KILL) for the selected process; the shell owns a root confirmation for those actions and the action layer audits every signal outcome. Unit lifecycle actions remain a follow-up. The help overlay lists every binding active in the current context.
+- Command palette jumps to any module by fuzzy name (keyboard-only, like the help overlay) and lists context process actions (TERM/KILL) for the selected process; the shell owns a root confirmation for those actions and the action layer audits every signal outcome. It also lists Start/Stop/Restart for the selected unit: start is direct (not destructive), while stop and restart use the same root confirmation, and the action layer audits the outcome. The help overlay lists every binding active in the current context.
 - Mouse: cell-motion events hit-tested against registered zones (sidebar items, table rows, log lines, buttons).
 - Parity rule: **every mouse action has a keyboard equivalent**; all bindings are configurable via the config file.
 
