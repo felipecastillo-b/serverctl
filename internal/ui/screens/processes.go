@@ -269,15 +269,35 @@ func (p *processes) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return p, nil, true
 }
 
-// UpdateMouse routes presses to the open confirmation modal only. Table
-// row clicks need viewport offset access that bubbles/table v1.0.0 does
-// not expose; they land with a later milestone.
+// UpdateMouse routes presses to the open confirmation modal, else a left
+// press selects the clicked table row: the exact parity of the up/down
+// keys. Clicks outside the table fall through to the shell.
 func (p *processes) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
-	if !p.modalOpen {
+	if p.modalOpen {
+		p.modal.UpdateMouse(msg)
+		return p, p.resolveModal(), true
+	}
+
+	event := tea.MouseEvent(msg)
+	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
 		return p, nil, false
 	}
-	p.modal.UpdateMouse(msg)
-	return p, p.resolveModal(), true
+	if p.lastWidth <= 0 {
+		return p, nil, false
+	}
+	row, ok := tableRowAt(p.table, columnsFor(p.lastWidth), event.X, event.Y)
+	if !ok {
+		return p, nil, false
+	}
+	// Move by the delta instead of SetCursor: the widget's SetCursor
+	// recomputes the window around the new cursor, while the move methods
+	// keep the visible window stable.
+	if delta := row - p.table.Cursor(); delta > 0 {
+		p.table.MoveDown(delta)
+	} else if delta < 0 {
+		p.table.MoveUp(-delta)
+	}
+	return p, nil, true
 }
 
 // requestSignal opens the §7 confirmation modal for sig on the selected
@@ -378,6 +398,7 @@ func (p *processes) reapply() {
 	} else {
 		p.table.SetCursor(0)
 	}
+	anchorTableCursor(&p.table)
 }
 
 // filterAndSort applies the filter query to the collected listing and
@@ -515,8 +536,9 @@ func (p *processes) View(width, height int) string {
 	if p.filtering {
 		body--
 	}
-	if body > 0 {
+	if body > 0 && p.table.Height() != body-1 {
 		p.table.SetHeight(body)
+		anchorTableCursor(&p.table)
 	}
 
 	muted := lipgloss.NewStyle().Foreground(p.theme.Muted)

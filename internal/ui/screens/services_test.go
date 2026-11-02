@@ -491,6 +491,48 @@ func TestServicesMouseConfirmsModal(t *testing.T) {
 	}
 }
 
+func TestServicesClickSelectsRow(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+	s.View(100, 24)
+	if len(s.view) < 2 {
+		t.Fatalf("fixture needs at least two rows, got %d", len(s.view))
+	}
+	if s.table.Cursor() != 0 {
+		t.Fatalf("precondition: cursor = %d, want 0", s.table.Cursor())
+	}
+
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 2))
+	s = updated.(*services)
+	if !handled {
+		t.Fatal("a left press on a table row must be claimed")
+	}
+	if cmd != nil {
+		t.Error("selecting a row must not emit a command")
+	}
+	if s.table.Cursor() != 1 {
+		t.Errorf("cursor = %d, want the clicked row 1", s.table.Cursor())
+	}
+
+	cursor := s.table.Cursor()
+	updated, cmd, handled = s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 0))
+	s = updated.(*services)
+	if handled || cmd != nil {
+		t.Errorf("header press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if s.table.Cursor() != cursor {
+		t.Errorf("header press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+
+	updated, cmd, handled = s.UpdateMouse(mousePress(tea.MouseButtonLeft, 2, 23))
+	s = updated.(*services)
+	if handled || cmd != nil {
+		t.Errorf("status-line press: handled=%v cmd=%v, want unclaimed without a command", handled, cmd)
+	}
+	if s.table.Cursor() != cursor {
+		t.Errorf("status-line press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+}
+
 func TestServicesTickRearmsOwnCadence(t *testing.T) {
 	lister := &fakeLister{units: unitFixture}
 	s := newServicesScreen(t, lister, &fakeManager{})

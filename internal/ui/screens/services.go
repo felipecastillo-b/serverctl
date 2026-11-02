@@ -337,15 +337,35 @@ func (s *services) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return s, nil, true
 }
 
-// UpdateMouse routes presses to the open confirmation modal only. Table
-// row clicks need viewport offset access that bubbles/table v1.0.0 does
-// not expose; they land with a later milestone.
+// UpdateMouse routes presses to the open confirmation modal, else a left
+// press selects the clicked table row: the exact parity of the up/down
+// keys. Clicks outside the table fall through to the shell.
 func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
-	if !s.modalOpen {
+	if s.modalOpen {
+		s.modal.UpdateMouse(msg)
+		return s, s.resolveModal(), true
+	}
+
+	event := tea.MouseEvent(msg)
+	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
 		return s, nil, false
 	}
-	s.modal.UpdateMouse(msg)
-	return s, s.resolveModal(), true
+	if s.lastWidth <= 0 {
+		return s, nil, false
+	}
+	row, ok := tableRowAt(s.table, unitColumnsFor(s.lastWidth), event.X, event.Y)
+	if !ok {
+		return s, nil, false
+	}
+	// Move by the delta instead of SetCursor: the widget's SetCursor
+	// recomputes the window around the new cursor, while the move methods
+	// keep the visible window stable.
+	if delta := row - s.table.Cursor(); delta > 0 {
+		s.table.MoveDown(delta)
+	} else if delta < 0 {
+		s.table.MoveUp(-delta)
+	}
+	return s, nil, true
 }
 
 // openDetail emits the static detail for the cursor's unit.
@@ -469,6 +489,7 @@ func (s *services) reapply() {
 	} else {
 		s.table.SetCursor(0)
 	}
+	anchorTableCursor(&s.table)
 }
 
 // filterAndSort narrows the collected listing to .service units whose
@@ -619,8 +640,9 @@ func (s *services) View(width, height int) string {
 	if s.filtering {
 		body--
 	}
-	if body > 0 {
+	if body > 0 && s.table.Height() != body-1 {
 		s.table.SetHeight(body)
+		anchorTableCursor(&s.table)
 	}
 
 	muted := lipgloss.NewStyle().Foreground(s.theme.Muted)
