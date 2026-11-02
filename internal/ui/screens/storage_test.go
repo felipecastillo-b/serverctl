@@ -69,7 +69,15 @@ var diskFixture = []core.Disk{
 // stays runtime territory, driving it here would stall the test.
 func newStorageScreen(t *testing.T, lister *fakeStorageLister) *storage {
 	t.Helper()
-	s := newStorage(lister, theme.Dark(), defaultStorageInterval)
+	return newStorageScreenWith(t, lister, nil)
+}
+
+// newStorageScreenWith is newStorageScreen with explicit screen_keys
+// overrides.
+func newStorageScreenWith(t *testing.T, lister *fakeStorageLister,
+	overrides map[string]string) *storage {
+	t.Helper()
+	s := newStorage(lister, theme.Dark(), defaultStorageInterval, overrides)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must collect and start the cadence")
@@ -333,6 +341,49 @@ func TestStorageDisksSortAndFilter(t *testing.T) {
 	}
 }
 
+func TestStorageKeyOverridesApply(t *testing.T) {
+	s := newStorageScreenWith(t, &fakeStorageLister{filesystems: fsFixture, disks: diskFixture},
+		map[string]string{"toggle_view": "V", "sort_mount": "M"})
+
+	// M is the overridden mount sort: the default m is no longer
+	// claimed and the use ladder stays active.
+	if _, _, handled := s.UpdateKey(keyMsg("m")); handled {
+		t.Fatal("m must not be claimed after rebinding sort_mount to M")
+	}
+	if s.fsSort != fsSortUse {
+		t.Fatalf("an unclaimed m must leave the use sort, got %v", s.fsSort)
+	}
+
+	updated, _, handled := s.UpdateKey(keyMsg("M"))
+	s = updated.(*storage)
+	if !handled {
+		t.Fatal("M must be claimed as the overridden mount sort")
+	}
+	if s.fsSort != fsSortMount {
+		t.Fatalf("sort key = %v, want mount after M", s.fsSort)
+	}
+	if got := fsMounts(s.fsView); !slices.Equal(got, []string{"/", "/boot", "/home", "/run"}) {
+		t.Errorf("order after M = %v, want mount ascending", got)
+	}
+
+	// V is the overridden view toggle: the default d falls through and
+	// the view stays on filesystems until V arrives.
+	if _, _, handled := s.UpdateKey(keyMsg("d")); handled {
+		t.Fatal("d must not be claimed after rebinding toggle_view to V")
+	}
+	if s.view != storageFilesystems {
+		t.Fatalf("view = %v, want filesystems before V", s.view)
+	}
+	updated, _, handled = s.UpdateKey(keyMsg("V"))
+	s = updated.(*storage)
+	if !handled {
+		t.Fatal("V must be claimed as the overridden view toggle")
+	}
+	if s.view != storageDisks {
+		t.Fatalf("view = %v, want disks after V", s.view)
+	}
+}
+
 func TestStorageTickRearmsOwnCadence(t *testing.T) {
 	lister := &fakeStorageLister{filesystems: fsFixture, disks: diskFixture}
 	s := newStorageScreen(t, lister)
@@ -375,7 +426,7 @@ func TestStorageTickRearmsOwnCadence(t *testing.T) {
 // round lands, and the listing summary.
 func TestStorageErrorAndCollectingStates(t *testing.T) {
 	// Before the first round: collecting.
-	fresh := newStorage(&fakeStorageLister{}, theme.Dark(), defaultStorageInterval)
+	fresh := newStorage(&fakeStorageLister{}, theme.Dark(), defaultStorageInterval, nil)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh filesystems view must show collecting..., got:\n%s", out)
 	}
@@ -385,7 +436,7 @@ func TestStorageErrorAndCollectingStates(t *testing.T) {
 		disks: diskFixture,
 		fsErr: errors.New("no proc mounts"),
 	}
-	s := newStorage(lister, theme.Dark(), defaultStorageInterval)
+	s := newStorage(lister, theme.Dark(), defaultStorageInterval, nil)
 	updated, _ := s.Update(s.collect()())
 	s = updated.(*storage)
 	if !s.disksLoaded || s.fsLoaded {

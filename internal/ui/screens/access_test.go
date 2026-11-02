@@ -79,7 +79,15 @@ var attemptsFixture = []core.SSHAttempt{
 // stay runtime territory, driving them here would stall the test.
 func newAccessScreen(t *testing.T, sessions *fakeSessionLister, attempts *fakeAttemptLister) *access {
 	t.Helper()
-	s := newAccess(sessions, attempts, theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
+	return newAccessScreenWith(t, sessions, attempts, nil)
+}
+
+// newAccessScreenWith is newAccessScreen with explicit screen_keys
+// overrides.
+func newAccessScreenWith(t *testing.T, sessions *fakeSessionLister, attempts *fakeAttemptLister,
+	overrides map[string]string) *access {
+	t.Helper()
+	s := newAccess(sessions, attempts, theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval, overrides)
 	cmd := s.Init()
 	if cmd == nil {
 		t.Fatal("Init must start both chains and collect both listings")
@@ -199,6 +207,35 @@ func TestAccessViewCyclesWithV(t *testing.T) {
 	}
 }
 
+func TestAccessKeyOverridesApply(t *testing.T) {
+	s := newAccessScreenWith(t,
+		&fakeSessionLister{sessions: sessionsFixture},
+		&fakeAttemptLister{attempts: attemptsFixture},
+		map[string]string{"cycle_view": "V"})
+
+	if s.view != accessSessions {
+		t.Fatalf("fresh view = %v, want sessions", s.view)
+	}
+
+	// The default cycle key is no longer claimed: v is not a table nav
+	// key, so it falls through to the global keymap.
+	if _, _, handled := s.UpdateKey(keyMsg("v")); handled {
+		t.Fatal("v must not be claimed after rebinding cycle_view to V")
+	}
+	if s.view != accessSessions {
+		t.Fatal("an unclaimed v must leave the sessions view")
+	}
+
+	updated, _, handled := s.UpdateKey(keyMsg("V"))
+	s = updated.(*access)
+	if !handled {
+		t.Fatal("V must be claimed as the overridden view cycle")
+	}
+	if s.view != accessAttempts {
+		t.Fatalf("view = %v, want attempts after V", s.view)
+	}
+}
+
 // TestAccessTwoChainsReArmIndependently pins the module's two
 // cadences (§3: sessions 10 s, attempts 30 s): each tick re-collects
 // and re-arms its OWN half only, and the shell's global RefreshMsg
@@ -261,7 +298,7 @@ func TestAccessTwoChainsReArmIndependently(t *testing.T) {
 // one view never disturbing the other view's good listing or state.
 func TestAccessErrorPersistsPerView(t *testing.T) {
 	// Before any round: the active view collects.
-	fresh := newAccess(&fakeSessionLister{}, &fakeAttemptLister{}, theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
+	fresh := newAccess(&fakeSessionLister{}, &fakeAttemptLister{}, theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval, nil)
 	if out := fresh.View(100, 24); !strings.Contains(out, "collecting...") {
 		t.Errorf("fresh screen must show collecting..., got:\n%s", out)
 	}
@@ -270,7 +307,7 @@ func TestAccessErrorPersistsPerView(t *testing.T) {
 	s := newAccess(
 		&fakeSessionLister{err: errors.New("no utmp")},
 		&fakeAttemptLister{attempts: attemptsFixture},
-		theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
+		theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval, nil)
 	updated, _ := s.Update(s.collectSessions()())
 	s = updated.(*access)
 	if s.sessionsLoaded {
@@ -300,7 +337,7 @@ func TestAccessErrorPersistsPerView(t *testing.T) {
 	s = newAccess(
 		&fakeSessionLister{sessions: sessionsFixture},
 		&fakeAttemptLister{err: errors.New("journal locked")},
-		theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval)
+		theme.Dark(), defaultSessionsInterval, defaultAttemptsInterval, nil)
 	updated, _ = s.Update(s.collectSessions()())
 	s = updated.(*access)
 	updated, _ = s.Update(s.collectAttempts()())
