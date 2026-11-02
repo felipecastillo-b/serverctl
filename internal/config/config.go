@@ -46,6 +46,9 @@ type Config struct {
 	RefreshSeconds int `yaml:"refresh_seconds"`
 	// Keys overrides default keybindings: action name -> key string.
 	Keys map[string]string `yaml:"keys"`
+	// ScreenKeys overrides screen-local action bindings:
+	// screen name -> action name -> key string.
+	ScreenKeys map[string]map[string]string `yaml:"screen_keys"`
 	// Intervals overrides the per-chain refresh cadences in seconds:
 	// interval key -> seconds. Absent keys keep their defaults; a set
 	// key overrides only its own chain (unlike Keys, which replaces
@@ -59,6 +62,7 @@ func Default() Config {
 		Theme:          ThemeDark,
 		RefreshSeconds: DefaultRefreshSeconds,
 		Keys:           map[string]string{},
+		ScreenKeys:     map[string]map[string]string{},
 		Intervals:      DefaultIntervals(),
 	}
 }
@@ -127,6 +131,9 @@ func Load(path string) (Config, error) {
 	if file.Keys != nil {
 		cfg.Keys = file.Keys
 	}
+	if file.ScreenKeys != nil {
+		cfg.ScreenKeys = file.ScreenKeys
+	}
 	// Intervals merge per key, deliberately unlike the wholesale Keys
 	// replace above: a set key overrides only its chain and absent keys
 	// keep their defaults, so a partial intervals section never resets
@@ -151,6 +158,31 @@ func (c Config) validate() error {
 	}
 	if err := c.validateIntervals(); err != nil {
 		return err
+	}
+	if err := c.validateScreenKeys(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateScreenKeys rejects screen-local overrides that could never
+// bind: empty screen or action names and blank key strings. Unknown
+// screen and action names are validated by the screens package in main,
+// because only it knows the catalog of configurable actions.
+func (c Config) validateScreenKeys() error {
+	for _, screen := range slices.Sorted(maps.Keys(c.ScreenKeys)) {
+		if strings.TrimSpace(screen) == "" {
+			return errors.New("screen_keys has an empty screen name")
+		}
+		actions := c.ScreenKeys[screen]
+		for _, action := range slices.Sorted(maps.Keys(actions)) {
+			if strings.TrimSpace(action) == "" {
+				return fmt.Errorf("screen_keys.%s has an empty action name", screen)
+			}
+			if strings.TrimSpace(actions[action]) == "" {
+				return fmt.Errorf("screen_keys.%s.%s has an empty key", screen, action)
+			}
+		}
 	}
 	return nil
 }

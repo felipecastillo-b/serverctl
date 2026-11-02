@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +53,49 @@ keys:
 	}
 	if cfg.Keys["quit"] != "x" {
 		t.Errorf("keys: want quit->x, got %v", cfg.Keys)
+	}
+}
+
+func TestLoadScreenKeys(t *testing.T) {
+	path := writeFixture(t, `
+screen_keys:
+  processes:
+    kill: K
+    term: x
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := map[string]string{"kill": "K", "term": "x"}
+	if got := cfg.ScreenKeys["processes"]; len(got) != len(want) ||
+		got["kill"] != want["kill"] || got["term"] != want["term"] {
+		t.Errorf("screen_keys.processes = %v, want %v", got, want)
+	}
+}
+
+func TestLoadInvalidScreenKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"empty key", "screen_keys:\n  processes:\n    kill: \"\"\n"},
+		{"whitespace key", "screen_keys:\n  processes:\n    kill: \"  \"\n"},
+		{"empty action", "screen_keys:\n  processes:\n    \"\": K\n"},
+		{"empty screen", "screen_keys:\n  \"\":\n    kill: K\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.Load(writeFixture(t, tt.body))
+			if err == nil {
+				t.Fatalf("expected error for %s, got nil", tt.name)
+			}
+			if !strings.Contains(err.Error(), "screen_keys") {
+				t.Errorf("error %q must mention screen_keys", err)
+			}
+		})
 	}
 }
 

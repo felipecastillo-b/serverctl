@@ -37,10 +37,16 @@ func keyMsg(s string) tea.KeyMsg {
 // newFixtureScreen builds the processes screen on the golden /proc
 // fixtures with a recording sender, and runs the first collection.
 func newFixtureScreen(t *testing.T) (*processes, *fakeSender) {
+	return newFixtureScreenWith(t, nil)
+}
+
+// newFixtureScreenWith is newFixtureScreen with explicit screen_keys
+// overrides.
+func newFixtureScreenWith(t *testing.T, overrides map[string]string) (*processes, *fakeSender) {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	fake := &fakeSender{}
-	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), fake)
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), fake, overrides)
 	cmd := p.Init()
 	if cmd == nil {
 		t.Fatal("Init must collect")
@@ -114,6 +120,44 @@ func TestProcessesSorting(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestProcessesKeyOverridesApply(t *testing.T) {
+	p, _ := newFixtureScreenWith(t, map[string]string{"kill": "X", "sort_cpu": "C"})
+
+	// The default kill key is no longer claimed: k is not a table nav
+	// key, so it falls through to the global keymap.
+	if _, _, handled := p.UpdateKey(keyMsg("k")); handled {
+		t.Fatal("k must not be claimed after rebinding kill to X")
+	}
+
+	// C is the overridden CPU sort key. Move off CPU first so the
+	// assertion is observable.
+	p.sortKey = sortMem
+	p.reapply()
+	updated, _, handled := p.UpdateKey(keyMsg("C"))
+	p = updated.(*processes)
+	if !handled {
+		t.Fatal("C must be claimed as the overridden CPU sort key")
+	}
+	if p.sortKey != sortCPU {
+		t.Fatalf("sort key = %v, want cpu after C", p.sortKey)
+	}
+
+	// X opens the KILL confirmation.
+	if _, _, handled := p.UpdateKey(keyMsg("X")); !handled || !p.modalOpen {
+		t.Fatal("X must open the KILL confirmation")
+	}
+
+	found := false
+	for _, b := range p.Hints() {
+		if b.Help().Key == "X" && b.Help().Desc == "send KILL" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Hints() = %v, want a binding showing X and send KILL", p.Hints())
 	}
 }
 
