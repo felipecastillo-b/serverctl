@@ -1,15 +1,15 @@
 # serverctl Roadmap
 
-**Current release: [v0.5.1](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.5.1) (2026-11-02).**
+**Current release: [v0.6.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.0) (2026-11-02).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
 added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
 delivered M10 portability; v0.4.0 delivered M11 containers; v0.5.0 shipped the
 M12 SMART slice, and v0.5.1 removed it because SMART reads require root or
 `CAP_SYS_RAWIO` and the project does not escalate or require extra system
-configuration. This document covers what is delivered, how work flows, the live
-bug queue, and the proposed milestones ahead. Everything under
-"Proposed milestones" is a proposal — the maintainer prunes, splits, or
-reorders.
+configuration; v0.6.0 delivered M13 UX depth. This document covers what is
+delivered, how work flows, the live bug queue, and the proposed milestones
+ahead. Everything under "Proposed milestones" is a proposal — the maintainer
+prunes, splits, or reorders.
 
 ## 1. How we work
 
@@ -22,8 +22,8 @@ reorders.
 
 ### Release policy (0.x)
 
-- Bug-fix-only batches tag patch releases: `v0.5.2`, `v0.5.3`, ...
-- The first new feature or visible behavior change bumps MINOR: `v0.6.0`.
+- Bug-fix-only batches tag patch releases: `v0.6.1`, `v0.6.2`, ...
+- The first new feature or visible change bumps MINOR: `v0.7.0`.
 - Docs-only changes ride along with the next release and do not need a tag.
 - Tags are annotated (`serverctl vX.Y.Z — summary`); the release workflow
   publishes automatically on tag push.
@@ -52,6 +52,7 @@ queue is GitHub issues.
 | M9 — Hardening & release hygiene | Runner pin, action bumps, PR-retarget CI, v0.2.0 docs accuracy, UI clipping papercuts | v0.2.1 |
 | M10 — Portability | dpkg/rpm package-count adapters, logind sessions with utmp fallback, SSH attempt fallbacks and socket-activated sshd matching | v0.3.0 |
 | M11 — Containers | Read-only Docker/Podman module: container list, state, image and uptime over the local compat API socket | v0.4.0 |
+| M13 — UX depth | Screen stack and detail views, palette process/unit actions with root confirmation and audit, full mouse parity, configurable screen keys | v0.6.0 |
 
 Post-release work: **v0.2.0** — sensors were undetected on all real hardware
 (sysfs symlink walk bug) and now render ordered by usefulness
@@ -81,6 +82,11 @@ v0.5.1 ([#55](https://github.com/felipecastillo-b/serverctl/issues/55),
 `CAP_SYS_RAWIO` and no unprivileged path is in scope
 ([#61](https://github.com/felipecastillo-b/serverctl/issues/61),
 [#62](https://github.com/felipecastillo-b/serverctl/pull/62)).
+**v0.6.0** — M13: screen stack and detail views, row/log mouse parity,
+root-confirmed palette actions for process signals and unit lifecycle with an
+audit trail, and `screen_keys` per-screen action bindings
+([#63](https://github.com/felipecastillo-b/serverctl/issues/63); delivered in
+stacked PRs #64–#77).
 
 ### Released versions
 
@@ -93,16 +99,18 @@ v0.5.1 ([#55](https://github.com/felipecastillo-b/serverctl/issues/55),
 | [`v0.4.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.4.0) | 2026-10-30 | M11: read-only containers module (Docker/Podman) |
 | [`v0.5.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.5.0) | 2026-11-02 | M12 SMART: added then removed in v0.5.1 |
 | [`v0.5.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.5.1) | 2026-11-02 | Removed the SMART disk-health module: requires root/CAP_SYS_RAWIO |
+| [`v0.6.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.0) | 2026-11-02 | M13: screen stack/detail views, mouse parity, root-confirmed palette actions, screen keys |
 
 ### Shipped modules
 
 Dashboard (system, hardware, sensors), Processes, Services, Logs, Storage,
-Network, Packages, Users, Containers — under a command palette, keyboard and
-mouse navigation, dark/light themes, and per-module refresh intervals via
-config. Package counting adapts to pacman, dpkg and rpm hosts; sessions prefer
-logind with a utmp fallback; SSH attempts read the journal with auth-log and
-wtmp fallbacks; containers read the local Docker-compatible daemon, rootless
-sockets first.
+Network, Packages, Users, Containers — under a command palette (module jumps
+plus root-confirmed process and unit actions), a screen stack with detail
+views, keyboard and mouse navigation, configurable per-screen action keys,
+dark/light themes, and per-module refresh intervals via config. Package
+counting adapts to pacman, dpkg and rpm hosts; sessions prefer logind with a
+utmp fallback; SSH attempts read the journal with auth-log and wtmp fallbacks;
+containers read the local Docker-compatible daemon, rootless sockets first.
 
 ## 3. Known limitations
 
@@ -121,26 +129,21 @@ issue labeled `bug`.
 | Packages | dpkg/rpm adapters are fixture-tested only — no live Debian/RHEL host in the loop | environment |
 | Access | wtmp fallback rows are successful remote logins only; they cannot prove the service was SSH | by design |
 | Containers | Local Docker-compatible unix socket only; lifecycle actions, remote daemons and detail views are out of scope | by design |
+| Keybindings | Table and viewport navigation keys (arrows, pgup/pgdown, home/end, half-page) are built-in; `screen_keys` covers action bindings only | by design (M13) |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
-## 4. Proposed milestones (v0.6.0 onward)
+## 4. Proposed milestones (v0.7.0 onward)
 
-Proposal for the maintainer to prune or reorder. Each milestone is sized to
-become one GitHub Issue.
-
-### M13 — UX depth
-
-- [ ] Screen stack and detail views (`esc` pops; drill-down from tables).
-- [ ] Palette-triggered whitelisted actions (documented follow-up in
-      ARCHITECTURE.md §6).
-- [ ] Full mouse parity: table row clicks, log wheel/click.
-- [ ] Screen-local keybindings in config.
+No milestone proposals are open. New proposals land here after the maintainer
+scopes them into GitHub Issues.
 
 ### Engineering quality (threaded through milestones)
 
 - [ ] Golden-render tests for screens; direct tests for `core` contracts and
       the `cmd` entrypoint.
+- [ ] Replace the table row-hit-test render echo when `bubbles/table` exposes
+      its viewport window offsets.
 
 ## 5. Out of scope
 
