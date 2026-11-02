@@ -197,11 +197,11 @@ func All(th theme.Theme, sys collectors.System, cad Cadences,
 		case Services:
 			// collectors.System implements core.UnitLister over D-Bus
 			// and actions.Actor implements core.UnitManager (m4a).
-			out[i] = NewServices(sys, th, actions.Actor{}, cad.Services)
+			out[i] = NewServices(sys, th, actions.Actor{}, cad.Services, screenKeys["services"])
 		case Logs:
 			// collectors.System implements core.JournalReader over
 			// sdjournal (m4c).
-			out[i] = NewLogs(sys, th, cad.Logs)
+			out[i] = NewLogs(sys, th, cad.Logs, screenKeys["logs"])
 		case Storage:
 			// collectors.System implements core.StorageLister over
 			// /proc/mounts, statfs and /proc/diskstats (m5a).
@@ -226,7 +226,7 @@ func All(th theme.Theme, sys collectors.System, cad Cadences,
 		case Containers:
 			// collectors.System implements core.ContainerLister over
 			// the local Docker-compatible unix socket (m10b).
-			out[i] = NewContainers(sys, th, cad.Containers)
+			out[i] = NewContainers(sys, th, cad.Containers, screenKeys["containers"])
 		default:
 			out[i] = s
 		}

@@ -44,7 +44,7 @@ func newServicesPaletteModel(t *testing.T) Model {
 			Sub:         "running",
 			FileState:   "enabled",
 		}}},
-		theme.Dark(), &fakeUnitManager{}, time.Second,
+		theme.Dark(), &fakeUnitManager{}, time.Second, nil,
 	)
 	m, cmd := m.setActive(screens.Services)
 	if cmd == nil {

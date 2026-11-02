@@ -178,7 +178,7 @@ type ContainerList struct {
 - Command palette jumps to any module by fuzzy name (keyboard-only, like the help overlay) and lists context process actions (TERM/KILL) for the selected process; the shell owns a root confirmation for those actions and the action layer audits every signal outcome. It also lists Start/Stop/Restart for the selected unit: start is direct (not destructive), while stop and restart use the same root confirmation, and the action layer audits the outcome. The help overlay lists every binding active in the current context.
 - Mouse: cell-motion events hit-tested against registered zones (sidebar items, table rows, log lines, buttons).
 - Parity rule: **every mouse action has a keyboard equivalent**; all bindings are configurable via the config file.
-- Screen-local action bindings are configurable per screen through the `screen_keys` section, e.g. `screen_keys: {processes: {kill: K}}`; unknown screen or action names fail before the TUI starts, and absent actions keep the screen's built-in defaults. Navigation keys (table and viewport movement) remain built-in for now.
+- Screen-local action bindings are configurable per screen through the `screen_keys` section, e.g. `screen_keys: {processes: {kill: K}}`; unknown screen or action names fail before the TUI starts, and absent actions keep the screen's built-in defaults. The pilot list covers Processes, Services, Logs and Containers. Navigation keys (table and viewport movement) remain built-in for now.
 
 ## 7. Security model
 

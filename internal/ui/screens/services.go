@@ -2,6 +2,8 @@ package screens
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -93,12 +95,79 @@ func (k unitSortKey) String() string {
 	}
 }
 
+// servicesKeys holds the configurable actions of the services screen.
+type servicesKeys struct {
+	Enter, Filter, Start, Stop, Restart, SortName, SortActive key.Binding
+}
+
+// defaultServicesKeys returns the built-in services bindings.
+func defaultServicesKeys() servicesKeys {
+	return servicesKeys{
+		Enter:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open detail")),
+		Filter:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+		Start:      key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "start")),
+		Stop:       key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop")),
+		Restart:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
+		SortName:   key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name")),
+		SortActive: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "sort by state")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *servicesKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"enter":       &k.Enter,
+		"filter":      &k.Filter,
+		"start":       &k.Start,
+		"stop":        &k.Stop,
+		"restart":     &k.Restart,
+		"sort_name":   &k.SortName,
+		"sort_active": &k.SortActive,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *servicesKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "services", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "services", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order.
+func (k *servicesKeys) hints() []key.Binding {
+	return []key.Binding{
+		k.Enter, k.Start, k.Stop, k.Restart, k.SortName, k.SortActive, k.Filter,
+	}
+}
+
 // services is the systemd units screen: the .service listing collected
 // by m4a's collector with sort, filter and §7-gated lifecycle verbs.
 type services struct {
 	lister  core.UnitLister
 	manager core.UnitManager
 	theme   theme.Theme
+
+	keys servicesKeys
 
 	// interval is the screen's own refresh cadence; lastGood is the
 	// instant of its last successful round, the keeps-last-good
@@ -134,14 +203,17 @@ type services struct {
 // passes the live collectors.System, actions.Actor{} and the resolved
 // services cadence; tests inject fakes (ARCHITECTURE.md §4: actions is
 // the only mutating layer). A non-positive interval falls back to the
-// built-in §3 default.
-func NewServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager, interval time.Duration) Screen {
-	return newServices(lister, th, manager, interval)
+// built-in §3 default. overrides are the screen's entries of the
+// config's screen_keys section.
+func NewServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager,
+	interval time.Duration, overrides map[string]string) Screen {
+	return newServices(lister, th, manager, interval, overrides)
 }
 
 // newServices is the concrete constructor; tests use it for white-box
 // state assertions.
-func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager, interval time.Duration) *services {
+func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManager,
+	interval time.Duration, overrides map[string]string) *services {
 	if interval <= 0 {
 		interval = defaultServicesInterval
 	}
@@ -161,12 +233,16 @@ func newServices(lister core.UnitLister, th theme.Theme, manager core.UnitManage
 		}),
 	)
 
+	keys := defaultServicesKeys()
+	_ = keys.apply(overrides)
+
 	return &services{
 		lister:  lister,
 		manager: manager,
 		theme:   th,
 		table:   tbl,
 		filter:  filter,
+		keys:    keys,
 		// The attention ladder is the natural first sort of a unit
 		// monitor: failures first (ARCHITECTURE.md §3).
 		sortKey:   unitSortActive,
@@ -298,22 +374,22 @@ func (s *services) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return s, cmd, true
 	}
 
-	switch msg.String() {
-	case "enter":
+	switch {
+	case key.Matches(msg, s.keys.Enter):
 		return s, s.openDetail(), true
-	case "/":
+	case key.Matches(msg, s.keys.Filter):
 		s.filtering = true
 		s.filter.Focus()
 		return s, nil, true
-	case "s":
+	case key.Matches(msg, s.keys.Start):
 		return s, s.startUnit(), true
-	case "x":
+	case key.Matches(msg, s.keys.Stop):
 		return s, s.requestLifecycle(unitStop), true
-	case "r":
+	case key.Matches(msg, s.keys.Restart):
 		return s, s.requestLifecycle(unitRestart), true
-	case "n":
+	case key.Matches(msg, s.keys.SortName):
 		s.applySort(unitSortName)
-	case "a":
+	case key.Matches(msg, s.keys.SortActive):
 		s.applySort(unitSortActive)
 	default:
 		// Only the navigation keys the table actually consumes are
@@ -614,15 +690,7 @@ func (s *services) Title() string { return "Services" }
 // Hints implements Screen: the services keymap as the help overlay
 // shows it below the global section.
 func (s *services) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open detail")),
-		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "start")),
-		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop")),
-		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
-		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name")),
-		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "sort by state")),
-		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	}
+	return s.keys.hints()
 }
 
 // View renders the table with a filter line and a status line, or the

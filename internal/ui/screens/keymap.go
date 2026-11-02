@@ -16,6 +16,18 @@ var screenKeySlots = map[string]func() map[string]*key.Binding{
 		k := defaultProcessKeys()
 		return k.slots()
 	},
+	"services": func() map[string]*key.Binding {
+		k := defaultServicesKeys()
+		return k.slots()
+	},
+	"logs": func() map[string]*key.Binding {
+		k := defaultLogsKeys()
+		return k.slots()
+	},
+	"containers": func() map[string]*key.Binding {
+		k := defaultContainersKeys()
+		return k.slots()
+	},
 }
 
 // ValidateScreenKeys checks the screen-local keybinding overrides before
