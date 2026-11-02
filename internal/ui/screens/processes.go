@@ -67,6 +67,7 @@ type processes struct {
 	modalOpen bool
 	modalPID  int
 	modalSig  actions.ProcessSignal
+	modalName string
 
 	filter    textinput.Model
 	filtering bool
@@ -308,6 +309,7 @@ func (p *processes) requestSignal(sig actions.ProcessSignal) tea.Cmd {
 	p.modalOpen = true
 	p.modalPID = row.PID
 	p.modalSig = sig
+	p.modalName = row.Name
 	p.status = ""
 	return nil
 }
@@ -345,16 +347,27 @@ func (p *processes) openDetail() tea.Cmd {
 }
 
 // resolveModal closes the modal once decided and dispatches the confirmed
-// signal; a denial just records the cancellation.
+// signal. The screen records the modal states the backend cannot see
+// (confirmed and denied); actions.Actor audits the executed/failed outcome
+// of the delivery itself (ARCHITECTURE.md §7).
 func (p *processes) resolveModal() tea.Cmd {
 	switch p.modal.Decision() {
 	case confirm.Confirmed:
-		pid, sig := p.modalPID, p.modalSig
+		pid, sig, name := p.modalPID, p.modalSig, p.modalName
 		p.modalOpen = false
+		target := fmt.Sprintf("pid %d (%s)", pid, name)
+		if err := actions.Record("process.signal", target, "confirmed", ""); err != nil {
+			p.status = fmt.Sprintf("%s pid %d failed: %v", sig, pid, err)
+			return nil
+		}
 		return p.signal(pid, sig)
 	case confirm.Denied:
 		p.modalOpen = false
 		p.status = "cancelled"
+		if err := actions.Record("process.signal",
+			fmt.Sprintf("pid %d (%s)", p.modalPID, p.modalName), "denied", ""); err != nil {
+			p.status = fmt.Sprintf("cancelled (audit failed: %v)", err)
+		}
 	}
 	return nil
 }

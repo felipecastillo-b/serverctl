@@ -3,6 +3,7 @@ package screens
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -200,6 +201,65 @@ func TestProcessesSignalDenied(t *testing.T) {
 	}
 	if p.status != "cancelled" {
 		t.Errorf("status = %q, want cancelled", p.status)
+	}
+}
+
+// TestProcessesSignalConfirmedAuditsDecision pins the §7 split for the
+// screen-local signal modal: the screen records the confirmed decision,
+// while actions.Actor audits the delivery outcome.
+func TestProcessesSignalConfirmedAuditsDecision(t *testing.T) {
+	p, fake := newFixtureScreen(t)
+	dir := os.Getenv("XDG_STATE_HOME")
+
+	if _, _, handled := p.UpdateKey(keyMsg("k")); !handled || !p.modalOpen {
+		t.Fatal("k must open the KILL confirmation")
+	}
+	updated, cmd, handled := p.UpdateKey(keyMsg("y"))
+	p = updated.(*processes)
+	if !handled || cmd == nil {
+		t.Fatal("y must confirm and dispatch the signal")
+	}
+	p.Update(cmd())
+	if fake.pid != 2 || fake.sig != actions.SignalKill {
+		t.Fatalf("sender got pid=%d sig=%v, want 2 KILL", fake.pid, fake.sig)
+	}
+
+	entries := readAudit(t, dir)
+	if len(entries) != 1 {
+		t.Fatalf("audit log has %d entries, want 1: %+v", len(entries), entries)
+	}
+	entry := entries[0]
+	if entry.Action != "process.signal" || entry.Result != "confirmed" ||
+		entry.Target != "pid 2 (kthreadd)" {
+		t.Errorf("audit entry = %+v, want process.signal/confirmed/pid 2 (kthreadd)", entry)
+	}
+}
+
+// TestProcessesSignalDeniedAuditsDecision pins the denial half: an
+// unconfirmed signal dispatches nothing and still leaves an audit line.
+func TestProcessesSignalDeniedAuditsDecision(t *testing.T) {
+	p, fake := newFixtureScreen(t)
+	dir := os.Getenv("XDG_STATE_HOME")
+
+	if _, _, handled := p.UpdateKey(keyMsg("t")); !handled || !p.modalOpen {
+		t.Fatal("t must open the TERM confirmation")
+	}
+	_, cmd, handled := p.UpdateKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if !handled || cmd != nil {
+		t.Fatal("esc must deny without dispatching anything")
+	}
+	if fake.pid != 0 {
+		t.Fatalf("sender must not be called on denial, got pid %d", fake.pid)
+	}
+
+	entries := readAudit(t, dir)
+	if len(entries) != 1 {
+		t.Fatalf("audit log has %d entries, want 1: %+v", len(entries), entries)
+	}
+	entry := entries[0]
+	if entry.Action != "process.signal" || entry.Result != "denied" ||
+		entry.Target != "pid 2 (kthreadd)" {
+		t.Errorf("audit entry = %+v, want process.signal/denied/pid 2 (kthreadd)", entry)
 	}
 }
 
