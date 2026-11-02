@@ -135,7 +135,6 @@ issue labeled `bug`.
 | Containers | Local Docker-compatible unix socket only; lifecycle actions, remote daemons and detail views are out of scope | by design |
 | Keybindings | Table and viewport navigation keys (arrows, pgup/pgdown, home/end, half-page) are built-in; `screen_keys` covers action bindings only | by design (M13) |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
-| Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
 ## 4. Proposed milestones (v0.7.0 onward)
 
@@ -144,10 +143,14 @@ scopes them into GitHub Issues.
 
 ### Engineering quality (threaded through milestones)
 
-- [ ] Golden-render tests for screens; direct tests for `core` contracts and
-      the `cmd` entrypoint.
+- [x] Golden-render tests for the stable screens and overlays; direct tests for
+      `core` contracts, the `cmd` entrypoint, `help` and `sidebar`.
 - [ ] Replace the table row-hit-test render echo when `bubbles/table` exposes
-      its viewport window offsets.
+      its viewport window offsets (upstream-blocked).
+- [ ] Golden tests for the time-dependent Dashboard/Processes screens once
+      clocks are injectable.
+- [ ] Stabilize the wall-clock `TestNetworkRatesRefreshThroughTracker` with an
+      injectable clock.
 
 ## 5. Out of scope
 
