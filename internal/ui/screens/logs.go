@@ -229,6 +229,8 @@ func (s *logs) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	case "f":
 		s.follow = !s.follow
 		return s, nil, true
+	case "enter":
+		return s, s.openFocused(), true
 	default:
 		// Only the navigation keys the viewport actually consumes are
 		// claimed; every other key falls through to the global keymap
@@ -249,12 +251,104 @@ func (s *logs) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	}
 }
 
-// UpdateMouse handles nothing in v1: §6's parity rule wants keyboard
-// equivalents for mouse actions, not the reverse — the scroll and
-// follow keys cover everything a wheel would do. Wheel and click
-// handling lands with a later milestone's mouse story.
+// UpdateMouse handles the wheel and left clicks inside the viewport.
+// Events the shell delivers for the sidebar or the header carry negative
+// coordinates, and events outside the pane the viewport rendered (its
+// width while set, its height after a View) are ignored, so they fall
+// through to the shell. The wheel scrolls like the navigation keys: up
+// pauses following, down never resumes it. A left press opens the detail
+// of the clicked entry; a press on the status line or past the entries is
+// swallowed without a command.
 func (s *logs) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
+	if msg.X < 0 || msg.Y < 0 {
+		return s, nil, false
+	}
+	if s.vp.Width > 0 && msg.X >= s.vp.Width {
+		return s, nil, false
+	}
+	if s.vp.Height > 0 && msg.Y >= s.vp.Height {
+		return s, nil, false
+	}
+	if msg.Action != tea.MouseActionPress {
+		return s, nil, false
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		var cmd tea.Cmd
+		s.vp, cmd = s.vp.Update(msg)
+		s.follow = false
+		return s, cmd, true
+	case tea.MouseButtonWheelDown:
+		var cmd tea.Cmd
+		s.vp, cmd = s.vp.Update(msg)
+		return s, cmd, true
+	case tea.MouseButtonLeft:
+		index := s.vp.YOffset + msg.Y
+		if index < 0 || index >= len(s.view) {
+			return s, nil, true
+		}
+		s.follow = false
+		return s, s.entryDetail(index), true
+	}
 	return s, nil, false
+}
+
+// openFocused opens the detail of the bottom visible entry: the keyboard
+// counterpart of clicking a line — scroll the wanted line to the bottom of
+// the pane, then press enter. Following is left alone: the opened entry is
+// the one the user is reading either way.
+func (s *logs) openFocused() tea.Cmd {
+	if len(s.view) == 0 {
+		return nil
+	}
+	index := s.vp.YOffset + s.vp.Height - 1
+	if index >= len(s.view) {
+		index = len(s.view) - 1
+	}
+	return s.entryDetail(index)
+}
+
+// entryDetail emits the static detail for the view entry at index.
+func (s *logs) entryDetail(index int) tea.Cmd {
+	entry := s.view[index]
+	title := "Log entry"
+	if entry.Unit != "" {
+		title += " · " + entry.Unit
+	}
+	fields := [][2]string{
+		{"Time", entry.Time.Format("2006-01-02 15:04:05")},
+		{"Unit", entry.Unit},
+		{"Priority", fmt.Sprintf("%d %s", entry.Priority, logPriorityName(entry.Priority))},
+		{"Message", strings.ReplaceAll(entry.Message, "\n", " ")},
+	}
+	lines := renderDetailFields(fields)
+	return func() tea.Msg {
+		return OpenDetailMsg{Title: title, Lines: lines}
+	}
+}
+
+// logPriorityName maps a syslog priority to its RFC 5424 name.
+func logPriorityName(p int) string {
+	switch p {
+	case 0:
+		return "emerg"
+	case 1:
+		return "alert"
+	case 2:
+		return "crit"
+	case 3:
+		return "err"
+	case 4:
+		return "warning"
+	case 5:
+		return "notice"
+	case 6:
+		return "info"
+	case 7:
+		return "debug"
+	}
+	return "unknown"
 }
 
 // refill re-derives the viewport's content from the buffer and the
@@ -316,6 +410,7 @@ func (s *logs) Hints() []key.Binding {
 		key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
 		key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll")),
 		key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "page")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open entry")),
 	}
 }
 

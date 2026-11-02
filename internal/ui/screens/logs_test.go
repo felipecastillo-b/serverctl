@@ -443,17 +443,143 @@ func TestLogsNavKeysClaimedAndOthersFallThrough(t *testing.T) {
 	}
 }
 
-func TestLogsMouseUnhandled(t *testing.T) {
-	s := newLogsScreen(t, &fakeJournal{tail: logFixture, tailCursor: "c3"})
-	press := tea.MouseMsg(tea.MouseEvent{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: 1})
-	if _, _, handled := s.UpdateMouse(press); handled {
-		t.Error("v1 logs handles no mouse: the event must fall through")
+func TestLogsWheelScrollsAndPausesFollow(t *testing.T) {
+	s := newLogsScreen(t, &fakeJournal{tail: genEntries(50, "l", 0), tailCursor: "c50"})
+
+	// The render goes to the bottom while following; there is room to
+	// scroll up.
+	s.View(80, 10)
+	if !s.follow || !s.vp.AtBottom() {
+		t.Fatalf("fresh tail must follow at the bottom: follow=%v atBottom=%v", s.follow, s.vp.AtBottom())
 	}
+	bottom := s.vp.YOffset
+	if bottom == 0 {
+		t.Fatal("fixture needs a scrollable viewport")
+	}
+
+	updated, _, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 1, 1))
+	s = updated.(*logs)
+	if !handled {
+		t.Fatal("the wheel inside the viewport must be claimed")
+	}
+	if s.follow {
+		t.Error("wheel up must pause following")
+	}
+	if s.vp.YOffset >= bottom {
+		t.Errorf("wheel up must scroll toward older lines: offset %d, was %d", s.vp.YOffset, bottom)
+	}
+	paused := s.vp.YOffset
+
+	updated, _, handled = s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 1, 1))
+	s = updated.(*logs)
+	if !handled {
+		t.Fatal("the wheel inside the viewport must be claimed")
+	}
+	if s.vp.YOffset <= paused {
+		t.Errorf("wheel down must scroll toward newer lines: offset %d, was %d", s.vp.YOffset, paused)
+	}
+	if s.follow {
+		t.Error("wheel down must not resume following")
+	}
+}
+
+func TestLogsClickOpensEntryDetail(t *testing.T) {
+	s := newLogsScreen(t, &fakeJournal{tail: genEntries(50, "l", 0), tailCursor: "c50"})
+
+	s.View(80, 10)
+	// Row 0 of the pane renders the entry at the viewport's offset.
+	entry := s.view[s.vp.YOffset]
+
+	_, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 1, 0))
+	if !handled {
+		t.Fatal("a left press inside the viewport must be claimed")
+	}
+	if cmd == nil {
+		t.Fatal("a left press on a log line must emit the detail command")
+	}
+	msg, ok := cmd().(OpenDetailMsg)
+	if !ok {
+		t.Fatalf("click command produced %T, want OpenDetailMsg", cmd())
+	}
+	if !strings.Contains(msg.Title, entry.Unit) {
+		t.Errorf("title %q must name the entry's unit %q", msg.Title, entry.Unit)
+	}
+	lines := strings.Join(msg.Lines, "\n")
+	if !strings.Contains(lines, "Message:") {
+		t.Errorf("detail lines missing the Message field:\n%s", lines)
+	}
+	if !strings.Contains(lines, entry.Message) {
+		t.Errorf("detail lines missing the clicked message %q:\n%s", entry.Message, lines)
+	}
+}
+
+func TestLogsClickOutsideViewportIgnored(t *testing.T) {
+	s := newLogsScreen(t, &fakeJournal{tail: genEntries(50, "l", 0), tailCursor: "c50"})
+
+	// The last rendered pane row is vp.Height-1; vp.Height belongs to
+	// the status line and must fall through to the shell.
+	s.View(80, 10)
+	_, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonLeft, 1, s.vp.Height))
+	if handled {
+		t.Error("a press on the status line must not be claimed")
+	}
+	if cmd != nil {
+		t.Error("a press outside the viewport must not emit a command")
+	}
+}
+
+func TestLogsEnterOpensBottomEntry(t *testing.T) {
+	s := newLogsScreen(t, &fakeJournal{tail: genEntries(50, "l", 0), tailCursor: "c50"})
+
+	s.View(80, 10)
+	index := s.vp.YOffset + s.vp.Height - 1
+	if index >= len(s.view) {
+		index = len(s.view) - 1
+	}
+	entry := s.view[index]
+
+	_, cmd, handled := s.UpdateKey(keyMsg("enter"))
+	if !handled {
+		t.Fatal("enter must be claimed by the logs keymap")
+	}
+	if cmd == nil {
+		t.Fatal("enter must emit the detail command")
+	}
+	msg, ok := cmd().(OpenDetailMsg)
+	if !ok {
+		t.Fatalf("enter command produced %T, want OpenDetailMsg", cmd())
+	}
+	if lines := strings.Join(msg.Lines, "\n"); !strings.Contains(lines, entry.Message) {
+		t.Errorf("detail lines missing the bottom visible entry %q:\n%s", entry.Message, lines)
+	}
+}
+
+func TestLogsEnterEmptyViewIsNoOp(t *testing.T) {
+	s := newLogsScreen(t, &fakeJournal{})
+
+	_, cmd, handled := s.UpdateKey(keyMsg("enter"))
+	if !handled {
+		t.Error("enter must be claimed even when the tail is empty")
+	}
+	if cmd != nil {
+		t.Error("enter on an empty view must not emit a command")
+	}
+}
+
+// mousePress builds the press bubbletea delivers for button at pane
+// coordinates x, y.
+func mousePress(button tea.MouseButton, x, y int) tea.MouseMsg {
+	return tea.MouseMsg(tea.MouseEvent{
+		Action: tea.MouseActionPress,
+		Button: button,
+		X:      x,
+		Y:      y,
+	})
 }
 
 func TestLogsHints(t *testing.T) {
 	s := newLogsScreen(t, &fakeJournal{tail: logFixture, tailCursor: "c3"})
-	want := []string{"filter", "follow", "scroll", "page"}
+	want := []string{"filter", "follow", "scroll", "page", "open entry"}
 	for _, b := range s.Hints() {
 		if !slices.Contains(want, b.Help().Desc) {
 			t.Errorf("unexpected hint %q", b.Help().Desc)
