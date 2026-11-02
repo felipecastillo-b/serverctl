@@ -184,7 +184,8 @@ func newContainers(lister core.ContainerLister, th theme.Theme, interval time.Du
 		table.WithFocused(true),
 		table.WithKeyMap(navKeyMap()),
 		table.WithStyles(table.Styles{
-			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary),
+			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary).PaddingRight(1),
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
 			Selected: lipgloss.NewStyle().
 				Foreground(th.Background).Background(th.Primary),
 		}),
@@ -216,7 +217,7 @@ func newContainers(lister core.ContainerLister, th theme.Theme, interval time.Du
 // narrow terminal, the same trade the storage and processes tables
 // make; the shell truncates the rendered line at its edge.
 func containerColumnsFor(width int) []table.Column {
-	name := width - 46
+	name := width - 46 - 4 // 46 fixed + 4 gutter cells
 	if name < 12 {
 		name = 12
 	}

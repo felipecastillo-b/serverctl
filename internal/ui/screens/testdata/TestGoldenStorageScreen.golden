@@ -1,8 +1,8 @@
-DEVICE          MOUNT                                   FSTYPE  SIZE      USED      AVAIL     USE%  
-/dev/sda1       /boot                                   vfat    1.0 GiB   990.0 MiB 10.0 MiB  99%   
-/dev/sda3       /home                                   btrfs   500.0 GiB 400.0 GiB 100.0 GiB 80%   
-/dev/sda2       /                                       ext4    100.0 GiB 20.0 GiB  80.0 GiB  20%   
-tmpfs           /run                                    tmpfs   4.0 GiB   0 B       4.0 GiB   0%    
+DEVICE           MOUNT                             FSTYPE   SIZE       USED       AVAIL      USE%   
+/dev/sda1        /boot                             vfat     1.0 GiB    990.0 MiB  10.0 MiB   99%    
+/dev/sda3        /home                             btrfs    500.0 GiB  400.0 GiB  100.0 GiB  80%    
+/dev/sda2        /                                 ext4     100.0 GiB  20.0 GiB   80.0 GiB   20%    
+tmpfs            /run                              tmpfs    4.0 GiB    0 B        4.0 GiB    0%     
                                                                                                     
                                                                                                     
                                                                                                     

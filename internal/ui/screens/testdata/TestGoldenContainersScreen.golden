@@ -1,7 +1,7 @@
-NAME                                                  STATE       IMAGE                   UPTIME    
-Cache                                                 exited      redis:7                 —         
-db                                                    running     postgres:16             2h 0m     
-web                                                   running     nginx:1.27              1h 30m    
+NAME                                               STATE        IMAGE                    UPTIME     
+Cache                                              exited       redis:7                  —          
+db                                                 running      postgres:16              2h 0m      
+web                                                running      nginx:1.27               1h 30m     
                                                                                                     
                                                                                                     
                                                                                                     

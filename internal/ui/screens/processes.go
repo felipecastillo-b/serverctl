@@ -177,7 +177,8 @@ func newProcesses(sys collectors.System, th theme.Theme, sender SignalSender,
 		table.WithFocused(true),
 		table.WithKeyMap(navKeyMap()),
 		table.WithStyles(table.Styles{
-			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary),
+			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary).PaddingRight(1),
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
 			Selected: lipgloss.NewStyle().
 				Foreground(th.Background).Background(th.Primary),
 		}),
@@ -220,7 +221,7 @@ func navKeyMap() table.KeyMap {
 // columnsFor lays out the table for a given width; the NAME column absorbs
 // whatever is left.
 func columnsFor(width int) []table.Column {
-	name := width - 44
+	name := width - 44 - 6 // 44 fixed + 6 gutter cells
 	if name < 8 {
 		name = 8
 	}

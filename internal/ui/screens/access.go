@@ -184,7 +184,8 @@ func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th t
 		table.WithFocused(true),
 		table.WithKeyMap(navKeyMap()),
 		table.WithStyles(table.Styles{
-			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary),
+			Header: lipgloss.NewStyle().Bold(true).Foreground(th.Secondary).PaddingRight(1),
+			Cell:   lipgloss.NewStyle().PaddingRight(1),
 			Selected: lipgloss.NewStyle().
 				Foreground(th.Background).Background(th.Primary),
 		}),
@@ -206,10 +207,10 @@ func newAccess(sessions core.SessionLister, attempts core.SSHAttemptLister, th t
 }
 
 // sessionsColumnsFor lays out the sessions table for a given width;
-// the FROM column absorbs whatever is left (37 cells are fixed).
+// the FROM column absorbs whatever is left (37 fixed + 4 gutter cells).
 // LOGIN AT needs 15: accessTimeLayout renders "Jan 02 15:04:05".
 func sessionsColumnsFor(width int) []table.Column {
-	from := width - 37
+	from := width - 37 - 4
 	if from < 8 {
 		from = 8
 	}
@@ -222,10 +223,10 @@ func sessionsColumnsFor(width int) []table.Column {
 }
 
 // attemptsColumnsFor lays out the attempts table for a given width;
-// the SOURCE IP column absorbs what is left (35 cells are fixed) so
+// the SOURCE IP column absorbs what is left (35 fixed + 4 gutter cells) so
 // a v6 address keeps room next to the fixed verdict column.
 func attemptsColumnsFor(width int) []table.Column {
-	ip := width - 35
+	ip := width - 35 - 4
 	if ip < 8 {
 		ip = 8
 	}
