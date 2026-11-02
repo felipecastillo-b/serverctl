@@ -220,23 +220,31 @@ func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleMouse offers every press to the active screen first: a screen
 // with an open confirmation modal is exclusive and swallows the event
-// before the shell acts (ARCHITECTURE.md §7). Unclaimed presses fall
-// through to the sidebar hit-test: the sidebar column starts below the
-// one-row header, so screen row y maps to sidebar row y-1. Mouse input
-// stays inert while the help overlay or the palette is open; both
-// overlays are keyboard-only.
+// before the shell acts (ARCHITECTURE.md §7). Screens render inside the
+// content pane, below the one-row header and to the right of the sidebar,
+// so every event is translated into that pane before delivery: a screen
+// hit-tests exactly the cells it rendered. Events over the sidebar or the
+// header arrive with negative coordinates and screens ignore them, but an
+// open modal still swallows them. Unclaimed presses fall through to the
+// sidebar hit-test in raw terminal coordinates: the sidebar column starts
+// below the header, so screen row y maps to sidebar row y-1. Mouse input
+// stays inert while the help overlay or the palette is open; both overlays
+// are keyboard-only.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp || m.palette.Open() {
 		return m, nil
 	}
 
-	updated, cmd, handled := m.screens[m.active].UpdateMouse(msg)
+	event := tea.MouseEvent(msg)
+	local := msg
+	local.X -= sidebar.Width
+	local.Y--
+	updated, cmd, handled := m.screens[m.active].UpdateMouse(local)
 	if handled {
 		m.screens[m.active] = updated
 		return m, cmd
 	}
 
-	event := tea.MouseEvent(msg)
 	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
 		return m, nil
 	}

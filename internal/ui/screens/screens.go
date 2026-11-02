@@ -98,8 +98,11 @@ type Screen interface {
 	// §6). handled reports whether the screen consumed the key.
 	UpdateKey(tea.KeyMsg) (Screen, tea.Cmd, bool)
 	// UpdateMouse offers a mouse event to the screen BEFORE the shell's
-	// sidebar hit-test; handled reports consumption. A screen with an
-	// open modal must swallow every event.
+	// sidebar hit-test; handled reports consumption. Coordinates are local
+	// to the content pane the screen renders in: the shell subtracts the
+	// sidebar width and the header row before delivery, so events over the
+	// sidebar or header have negative coordinates and must be ignored. A
+	// screen with an open modal must swallow every event.
 	UpdateMouse(tea.MouseMsg) (Screen, tea.Cmd, bool)
 	// View renders the screen within the given bounds in terminal cells.
 	View(width, height int) string
