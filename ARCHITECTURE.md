@@ -173,6 +173,7 @@ type ContainerList struct {
 ## 6. Navigation & input
 
 - Sidebar switches modules; screens form a stack (e.g., logs → filtered unit view), `esc` pops back.
+- The shell owns the stack of pushed screens: input and rendering go to the top entry while the sidebar selection stays on the base module. A module switch clears the stack; `esc` pops one entry and re-inits the module when the stack empties.
 - Global keymap (quit, palette, help, sidebar focus) is shadowed by the active screen's keymap (sort, filter, signal).
 - Command palette jumps to any module by fuzzy name (keyboard-only, like the help overlay); palette-triggered whitelisted actions are a follow-up pending routable action messages and root-level confirm gating. The help overlay lists every binding active in the current context.
 - Mouse: cell-motion events hit-tested against registered zones (sidebar items, table rows, buttons).
