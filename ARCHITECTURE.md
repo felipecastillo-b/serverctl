@@ -43,7 +43,7 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Entrypoint | CLI flags, config load, process wiring | `cmd/serverctl` |
 | Config | YAML config: theme (dark/light), keybindings, refresh interval | `internal/config` |
 | Core | Domain models, module registry, collector/action interfaces (ports) | `internal/core` |
-| Collectors | Read-only adapters: procfs (`/proc`), sysfs/hwmon (`/sys`), systemd via D-Bus (`go-systemd`), journal (`sdjournal`), pacman local database (package count), login records (`/var/log/wtmp`, `lastlog`), Docker-compatible Engine API over the local unix socket (containers), SMART via the optional `smartctl` binary (health) | `internal/collectors` |
+| Collectors | Read-only adapters: procfs (`/proc`), sysfs/hwmon (`/sys`), systemd via D-Bus (`go-systemd`), journal (`sdjournal`), pacman local database (package count), login records (`/var/log/wtmp`, `lastlog`), Docker-compatible Engine API over the local unix socket (containers) | `internal/collectors` |
 | Actions | **Only layer allowed to mutate**: whitelisted service start/stop/restart via D-Bus and process signals, each gated by confirmation | `internal/actions` |
 | UI | Bubble Tea root model, screen router, sidebar, reusable components (table, modal, palette, help overlay), themes, keymap | `internal/ui` |
 
@@ -62,7 +62,6 @@ Dependencies point downward only: `ui` consumes ports defined in `core`; `collec
 | Users / sessions | logind D-Bus (utmp file fallback) | 10 s default (config `intervals.users.sessions`) |
 | SSH audit | journal of the sshd process family (auth log, wtmp fallbacks) | 30 s default (config `intervals.users.attempts`) |
 | Containers | Docker-compatible Engine API over a local unix socket; rootless Podman/Docker sockets before system-wide ones | 10 s default (config `intervals.containers`) |
-| Health | optional `smartctl` JSON: SMART verdict, temperature and power-on time per physical disk | 60 s default (config `intervals.health`) |
 | Sensors | `/sys/class/hwmon` | each dashboard round (`refresh_seconds`) |
 | System info | `/proc/cpuinfo`, `uname`, DMI sysfs | each dashboard round (`refresh_seconds`) |
 
@@ -162,21 +161,6 @@ type ContainerList struct {
     Runtime    string // "docker" or "podman" — provenance from the socket
     Containers []Container
 }
-type DiskHealth struct { // M12: read-only SMART observation via optional smartctl
-    Device       string // /dev/sda
-    Model        string // smartctl model_name, fallback to the sysfs disk model
-    Protocol     string // ATA, NVMe, SCSI
-    Passed       bool
-    HasVerdict   bool   // smart_status present; absent rows list as UNKNOWN
-    TemperatureC int
-    HasTemp      bool   // presence flags: a real 0 is a value, absent is unknown
-    PowerOnHours uint64
-    HasPowerOn   bool
-}
-type DiskHealthReport struct {
-    Disks       []DiskHealth
-    ToolVersion string // smartctl provenance ("7.5"); "" when unknown
-}
 ```
 
 ## 5. Event & update system
@@ -204,7 +188,6 @@ type DiskHealthReport struct {
 | Unprivileged by default | All reads work as a regular user, and the tool is fully useful in read-only mode — with one qualification below: a system-wide Docker socket is root-equivalent by the daemon's own access model. |
 | Privileged ops via D-Bus | systemd mutations go through the system bus and PolicyKit, not setuid or sudo wrappers. |
 | Container socket read-only | The Containers module issues read-only GETs only, but access to a system-wide Docker socket grants the same power as the `docker` group — effectively root. Rootless Podman sockets are per-user and need no extra group. |
-| SMART disk health read-only | The Health module reads drives through the optional `smartctl` with fixed argv. That read needs root or `CAP_SYS_RAWIO`; serverctl never escalates, so the Health screen reports the requirement instead of prompting. |
 | Audit | Every action attempt (denied, confirmed, executed, failed) is logged locally. |
 
 ## 8. System information strategy
@@ -231,7 +214,6 @@ Prefer kernel interfaces over shelling out. When a command is unavoidable (the `
 | Users / sessions | logind D-Bus | utmp file |
 | SSH attempts | journal `SYSLOG_IDENTIFIER` of the sshd process family (covers `sshd.service`, `ssh.service` and socket-activated `sshd@N.service`) | `/var/log/auth.log` or `/var/log/secure`; then `/var/log/wtmp` (successful remote logins) |
 | Containers | Docker-compatible Engine API over a local unix socket — unversioned `GET /containers/json?all=1`; rootless Podman/Docker sockets before system-wide ones | next candidate socket; aggregated per-path error when none answers; no exec |
-| Disk health (SMART) | `smartctl --json` — `-j --scan` then one `-j -a [-d <type>] <name>` read per device, fixed argv, 5 s scan/device and 20 s round timeouts | —; unreadable devices become UNKNOWN rows and a missing tool is a reported state, not a failure |
 
 ## 9. Key dependencies
 

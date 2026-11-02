@@ -30,7 +30,6 @@ func TestCadencesResolveConfigIntervals(t *testing.T) {
 		config.IntervalUsersSessions:     11,
 		config.IntervalUsersAttempts:     12,
 		config.IntervalContainers:        13,
-		config.IntervalHealth:            14,
 	}
 	want := screens.Cadences{
 		Services:          3 * time.Second,
@@ -42,7 +41,6 @@ func TestCadencesResolveConfigIntervals(t *testing.T) {
 		UsersSessions:     11 * time.Second,
 		UsersAttempts:     12 * time.Second,
 		Containers:        13 * time.Second,
-		Health:            14 * time.Second,
 	}
 	if got := cadences(cfg); got != want {
 		t.Errorf("cadences() = %+v, want %+v", got, want)

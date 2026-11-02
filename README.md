@@ -15,13 +15,12 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
-> **v0.5.0 is released — milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed
+> **v0.4.0 is released — milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed
 > sensor detection; v0.2.1 hardened the release pipeline and UI; v0.3.0 added
-> portability; v0.4.0 added containers; v0.5.0 added SMART disk health.** The
-> binary launches the full TUI: dashboard, processes, services and journal logs,
-> storage, network, packages,
-> access audit, containers and disk health, with a command palette, keyboard and
-> mouse control, and dark/light themes. Grab it from the
+> portability; v0.4.0 added containers.** The binary launches the full TUI:
+> dashboard, processes, services and journal logs, storage, network, packages,
+> access audit, and containers, with a command palette, keyboard and mouse
+> control, and dark/light themes. Grab it from the
 > [releases page](https://github.com/felipecastillo-b/serverctl/releases) —
 > [ROADMAP.md](ROADMAP.md) tracks what is next.
 
@@ -37,9 +36,6 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 - Users and login sessions (logind D-Bus, utmp fallback)
 - SSH login attempt audit (journal, auth log and wtmp fallbacks)
 - Containers: Docker and Podman listings from the local socket, with state, image and uptime
-- Health: SMART disk health via the optional `smartctl` — PASSED/FAILED verdict,
-  temperature and power-on time, with a clear in-app hint when the package is
-  missing or the process is unprivileged
 - Hardware sensors via hwmon, ordered by dashboard usefulness
 
 ## Requirements
@@ -50,9 +46,6 @@ every mutating action whitelisted and gated behind a confirmation prompt.
   adapters are fixture-tested.
 - Containers are optional: the module reads a local Docker or Podman socket
   when one exists. No container daemon is required for the rest of the app.
-- SMART disk health is optional: when `smartctl` (smartmontools) is installed
-  the Health screen reads it; without the package the screen reports the
-  missing tool instead.
 - Go 1.24+ (plus the systemd headers) only if you build from source.
 
 ## Install
@@ -103,8 +96,6 @@ the system D-Bus, where PolicyKit decides whether the caller may run them.
   socket needs no group membership, while a system-wide Docker socket is
   root-equivalent — joining the `docker` group is a real privilege grant, not a
   read convenience.
-- **SMART reads** need root or `CAP_SYS_RAWIO`. serverctl never escalates, so an
-  unprivileged session shows a hint on the Health screen instead of disk data.
 - **Mutations** (start/stop/restart) are polkit-gated, whitelisted, confirmed in
   a modal, and audited locally — there is no generic command runner.
 

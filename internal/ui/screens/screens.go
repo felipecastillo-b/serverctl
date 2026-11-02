@@ -19,7 +19,7 @@ import (
 // screens, and the message contract must not create an import cycle.
 type RefreshMsg time.Time
 
-// Cadences carries the refresh intervals of the ten self-ticked
+// Cadences carries the refresh intervals of the nine self-ticked
 // collection chains of ARCHITECTURE.md §3 from the config layer to
 // the screen constructors. All() is the injection point: the app
 // resolves the configured intervals into this struct so the screens
@@ -40,7 +40,6 @@ type Cadences struct {
 	UsersSessions     time.Duration
 	UsersAttempts     time.Duration
 	Containers        time.Duration
-	Health            time.Duration
 }
 
 // DefaultCadences returns the built-in per-chain intervals, the §3
@@ -57,7 +56,6 @@ func DefaultCadences() Cadences {
 		UsersSessions:     defaultSessionsInterval,
 		UsersAttempts:     defaultAttemptsInterval,
 		Containers:        defaultContainersInterval,
-		Health:            defaultHealthInterval,
 	}
 }
 
@@ -84,7 +82,6 @@ const (
 	Packages
 	Users
 	Containers
-	Health
 )
 
 // Screen is a module view hosted by the root model. The shell owns layout
@@ -118,10 +115,9 @@ type Screen interface {
 // (system overview), processes, services (systemd units), logs
 // (journal tail), storage (mounts and disks), network (interfaces
 // and sockets), packages (installed count), users (login sessions
-// and SSH attempts), containers (local Docker/Podman daemon
-// listing) and health (SMART disk health from the optional
-// smartctl binary). A module whose milestone has not landed yet
-// would keep its catalog stub; with m12d all ten are live.
+// and SSH attempts) and containers (local Docker/Podman daemon
+// listing). A module whose milestone has not landed yet
+// would keep its catalog stub; with m10d all nine are live.
 //
 // All() is the intervals injection point of ARCHITECTURE.md §3: the
 // app resolves the config's `intervals` section into cad, and each
@@ -168,10 +164,6 @@ func All(th theme.Theme, sys collectors.System, cad Cadences) []Screen {
 			// collectors.System implements core.ContainerLister over
 			// the local Docker-compatible unix socket (m10b).
 			out[i] = NewContainers(sys, th, cad.Containers)
-		case Health:
-			// collectors.System implements core.DiskHealthLister over
-			// the optional smartctl binary (m12b).
-			out[i] = NewHealth(sys, th, cad.Health)
 		default:
 			out[i] = s
 		}
