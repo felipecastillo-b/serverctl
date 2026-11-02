@@ -112,7 +112,7 @@ issue labeled `bug`.
 | Area | Limitation / deferred item | Status |
 |------|---------------------------|--------|
 | Sensors | Temperature-only; chips outside the tier table still render, sorted last (extend the table as hardware appears) | by design |
-| Sensors | No fan/voltage/current readings yet | candidate (M12) |
+| Sensors | No fan/voltage/current readings yet | not planned |
 | SMART | Removed in v0.5.1: SMART reads require root or CAP_SYS_RAWIO, and serverctl does not escalate or require extra system configuration | out of scope |
 | Services | Unit mutations over SSH usually fail — polkit treats SSH sessions as non-local; no auth agent | open |
 | Logs | Journal visibility depends on the user's groups | environment |
@@ -130,15 +130,6 @@ issue labeled `bug`.
 
 Proposal for the maintainer to prune or reorder. Each milestone is sized to
 become one GitHub Issue.
-
-### M12 — Hardware health
-
-- [ ] Sensor depth: extend the chip tier table from field reports; evaluate
-      fan/voltage readings.
-
-SMART disk health was attempted in v0.5.0 and removed in v0.5.1 because the
-kernel requires `CAP_SYS_RAWIO`; it is out of scope unless the project accepts
-a privileged helper.
 
 ### M13 — UX depth
 
