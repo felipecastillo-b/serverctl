@@ -46,6 +46,9 @@ every mutating action whitelisted and gated behind a confirmation prompt.
   adapters are fixture-tested.
 - Containers are optional: the module reads a local Docker or Podman socket
   when one exists. No container daemon is required for the rest of the app.
+- SMART disk health is optional: when `smartctl` (smartmontools) is installed
+  the Health screen reads it; without the package the screen reports the
+  missing tool instead.
 - Go 1.24+ (plus the systemd headers) only if you build from source.
 
 ## Install
@@ -96,6 +99,8 @@ the system D-Bus, where PolicyKit decides whether the caller may run them.
   socket needs no group membership, while a system-wide Docker socket is
   root-equivalent — joining the `docker` group is a real privilege grant, not a
   read convenience.
+- **SMART reads** need root or `CAP_SYS_RAWIO`. serverctl never escalates, so an
+  unprivileged session shows a hint on the Health screen instead of disk data.
 - **Mutations** (start/stop/restart) are polkit-gated, whitelisted, confirmed in
   a modal, and audited locally — there is no generic command runner.
 

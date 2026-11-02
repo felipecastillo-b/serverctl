@@ -203,6 +203,7 @@ type DiskHealthReport struct {
 | Unprivileged by default | All reads work as a regular user, and the tool is fully useful in read-only mode — with one qualification below: a system-wide Docker socket is root-equivalent by the daemon's own access model. |
 | Privileged ops via D-Bus | systemd mutations go through the system bus and PolicyKit, not setuid or sudo wrappers. |
 | Container socket read-only | The Containers module issues read-only GETs only, but access to a system-wide Docker socket grants the same power as the `docker` group — effectively root. Rootless Podman sockets are per-user and need no extra group. |
+| SMART disk health read-only | The Health module reads drives through the optional `smartctl` with fixed argv. That read needs root or `CAP_SYS_RAWIO`; serverctl never escalates, so the Health screen reports the requirement instead of prompting. |
 | Audit | Every action attempt (denied, confirmed, executed, failed) is logged locally. |
 
 ## 8. System information strategy
@@ -229,6 +230,7 @@ Prefer kernel interfaces over shelling out. When a command is unavoidable (the `
 | Users / sessions | logind D-Bus | utmp file |
 | SSH attempts | journal `SYSLOG_IDENTIFIER` of the sshd process family (covers `sshd.service`, `ssh.service` and socket-activated `sshd@N.service`) | `/var/log/auth.log` or `/var/log/secure`; then `/var/log/wtmp` (successful remote logins) |
 | Containers | Docker-compatible Engine API over a local unix socket — unversioned `GET /containers/json?all=1`; rootless Podman/Docker sockets before system-wide ones | next candidate socket; aggregated per-path error when none answers; no exec |
+| Disk health (SMART) | `smartctl --json` — `-j --scan` then one `-j -a [-d <type>] <name>` read per device, fixed argv, 5 s scan/device and 20 s round timeouts | —; unreadable devices become UNKNOWN rows and a missing tool is a reported state, not a failure |
 
 ## 9. Key dependencies
 
