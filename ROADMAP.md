@@ -1,11 +1,12 @@
 # serverctl Roadmap
 
-**Current release: [v0.4.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.4.0) (2026-10-30).**
+**Current release: [v0.5.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.5.0) (2026-11-02).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
 added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
-delivered M10 portability; v0.4.0 delivered M11 containers. This document
-covers what is delivered, how work flows, the live bug queue, and the proposed
-milestones ahead. Everything under
+delivered M10 portability; v0.4.0 delivered M11 containers; v0.5.0 delivered
+the M12 SMART disk-health slice. This document covers what is delivered, how
+work flows, the live bug queue, and the proposed milestones ahead. Everything
+under
 "Proposed milestones" is a proposal — the maintainer prunes, splits, or
 reorders.
 
@@ -20,8 +21,8 @@ reorders.
 
 ### Release policy (0.x)
 
-- Bug-fix-only batches tag patch releases: `v0.4.1`, `v0.4.2`, ...
-- The first new feature or visible behavior change bumps MINOR: `v0.5.0`.
+- Bug-fix-only batches tag patch releases: `v0.5.1`, `v0.5.2`, ...
+- The first new feature or visible behavior change bumps MINOR: `v0.6.0`.
 - Docs-only changes ride along with the next release and do not need a tag.
 - Tags are annotated (`serverctl vX.Y.Z — summary`); the release workflow
   publishes automatically on tag push.
@@ -51,6 +52,9 @@ queue is GitHub issues.
 | M10 — Portability | dpkg/rpm package-count adapters, logind sessions with utmp fallback, SSH attempt fallbacks and socket-activated sshd matching | v0.3.0 |
 | M11 — Containers | Read-only Docker/Podman module: container list, state, image and uptime over the local compat API socket | v0.4.0 |
 
+M12 is partially delivered: its SMART disk-health slice shipped in v0.5.0, and
+the sensor-depth bullet remains open in §4.
+
 Post-release work: **v0.2.0** — sensors were undetected on all real hardware
 (sysfs symlink walk bug) and now render ordered by usefulness
 ([#40](https://github.com/felipecastillo-b/serverctl/issues/40),
@@ -68,6 +72,15 @@ socket ([#49](https://github.com/felipecastillo-b/serverctl/issues/49),
 [#51](https://github.com/felipecastillo-b/serverctl/pull/51),
 [#52](https://github.com/felipecastillo-b/serverctl/pull/52),
 [#53](https://github.com/felipecastillo-b/serverctl/pull/53)).
+**v0.5.0** — M12 (SMART slice): optional `smartctl` disk health with
+PASSED/FAILED, temperature and power-on time, plus actionable hints for a
+missing package and missing privilege
+([#55](https://github.com/felipecastillo-b/serverctl/issues/55),
+[#56](https://github.com/felipecastillo-b/serverctl/pull/56),
+[#57](https://github.com/felipecastillo-b/serverctl/pull/57),
+[#58](https://github.com/felipecastillo-b/serverctl/pull/58),
+[#59](https://github.com/felipecastillo-b/serverctl/pull/59),
+[#60](https://github.com/felipecastillo-b/serverctl/pull/60)).
 
 ### Released versions
 
@@ -78,16 +91,18 @@ socket ([#49](https://github.com/felipecastillo-b/serverctl/issues/49),
 | [`v0.2.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.2.1) | 2026-10-29 | M9: CI hardening, UI clipping papercuts, v0.2.0 docs accuracy |
 | [`v0.3.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.3.0) | 2026-10-30 | M10: dpkg/rpm counts, logind sessions, SSH attempt fallbacks |
 | [`v0.4.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.4.0) | 2026-10-30 | M11: read-only containers module (Docker/Podman) |
+| [`v0.5.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.5.0) | 2026-11-02 | M12 (SMART): optional smartctl disk health with privilege/missing-package hints |
 
 ### Shipped modules
 
 Dashboard (system, hardware, sensors), Processes, Services, Logs, Storage,
-Network, Packages, Users, Containers — under a command palette, keyboard and
-mouse navigation, dark/light themes, and per-module refresh intervals via
-config. Package counting adapts to pacman, dpkg and rpm hosts; sessions prefer
-logind with a utmp fallback; SSH attempts read the journal with auth-log and
+Network, Packages, Users, Containers, Health — under a command palette,
+keyboard and mouse navigation, dark/light themes, and per-module refresh
+intervals via config. Package counting adapts to pacman, dpkg and rpm hosts;
+sessions prefer logind with a utmp fallback; SSH attempts read the journal with auth-log and
 wtmp fallbacks; containers read the local Docker-compatible daemon, rootless
-sockets first.
+sockets first; Health reads SMART data through the optional smartctl binary
+and reports a missing package or missing privilege without failing.
 
 ## 3. Known limitations
 
@@ -111,7 +126,7 @@ issue labeled `bug`.
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 | Testing | `internal/core`, `cmd`, `help`, `sidebar` lack direct tests; no golden screen renders | planned |
 
-## 4. Proposed milestones (v0.5.0 onward)
+## 4. Proposed milestones (v0.6.0 onward)
 
 Proposal for the maintainer to prune or reorder. Each milestone is sized to
 become one GitHub Issue.
@@ -119,7 +134,7 @@ become one GitHub Issue.
 ### M12 — Hardware health
 
 - [x] SMART disk health via optional `smartctl` (read-only: pass/fail plus key
-      attributes).
+      attributes). Shipped in v0.5.0.
 - [ ] Sensor depth: extend the chip tier table from field reports; evaluate
       fan/voltage readings.
 
