@@ -34,7 +34,7 @@ func (f *fakeLister) Units() ([]core.Service, error) {
 // fakeManager records the last lifecycle verb instead of touching real
 // units.
 type fakeManager struct {
-	verb unitVerb
+	verb UnitAction
 	name string
 	err  error
 }
@@ -306,7 +306,7 @@ func TestServicesLifecycleGates(t *testing.T) {
 	cases := []struct {
 		name    string
 		verbKey string // opens the gate
-		verb    unitVerb
+		verb    UnitAction
 		answer  string // key that resolves the modal
 		deny    bool   // answer denies instead of confirming
 	}{
@@ -334,7 +334,7 @@ func TestServicesLifecycleGates(t *testing.T) {
 			if got := s.modal.Decision(); got != confirm.Pending {
 				t.Fatalf("modal decision before the answer = %v, want pending", got)
 			}
-			question := tc.verb.question(unit)
+			question := tc.verb.Question(unit)
 			if out := s.View(60, 20); !strings.Contains(out, question) {
 				t.Errorf("modal view must carry %q:\n%s", question, out)
 			}
@@ -386,10 +386,10 @@ func TestServicesLifecycleGates(t *testing.T) {
 			if tc.deny {
 				wantResult = "denied"
 			}
-			if got.Action != tc.verb.action() || got.Target != unit ||
+			if got.Action != tc.verb.Action() || got.Target != unit ||
 				got.Result != wantResult || got.Detail != "" {
 				t.Errorf("audit = %+v, want action %q target %q result %q",
-					got, tc.verb.action(), unit, wantResult)
+					got, tc.verb.Action(), unit, wantResult)
 			}
 		})
 	}
@@ -411,6 +411,50 @@ func TestServicesNoSelection(t *testing.T) {
 	s = updated.(*services)
 	if !handled || cmd != nil || s.modalOpen {
 		t.Fatal("stop with no rows must be a local no-op too")
+	}
+}
+
+func TestServicesUnitTarget(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+	// Default attention order puts the failed mysql.service first.
+	want := s.view[s.table.Cursor()].Name
+	target, ok := s.UnitTarget()
+	if !ok {
+		t.Fatal("a loaded listing must yield a unit target")
+	}
+	if target.Name != want {
+		t.Errorf("target = %q, want the cursor row %q", target.Name, want)
+	}
+
+	// An empty listing has nothing to offer the palette.
+	s.units = nil
+	s.reapply()
+	if target, ok := s.UnitTarget(); ok || target != (UnitTarget{}) {
+		t.Errorf("empty view: target = %+v ok = %v, want no target", target, ok)
+	}
+}
+
+// TestServicesUnitResultCancelled pins the shared result contract's
+// denial path: a cancelled palette action reports "canceled" and never
+// reaches the manager.
+func TestServicesUnitResultCancelled(t *testing.T) {
+	manager := &fakeManager{}
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, manager)
+
+	updated, cmd := s.Update(UnitActionResultMsg{
+		Action:    UnitStop,
+		Unit:      "sshd.service",
+		Cancelled: true,
+	})
+	s = updated.(*services)
+	if cmd != nil {
+		t.Errorf("a cancelled result must not emit a command, got %v", cmd)
+	}
+	if s.status != "canceled" {
+		t.Errorf("status = %q, want canceled", s.status)
+	}
+	if manager.verb != "" || manager.name != "" {
+		t.Errorf("manager got %s %q, want no call", manager.verb, manager.name)
 	}
 }
 
