@@ -84,9 +84,55 @@ fixture-tested.
 ## Usage
 
 ```bash
-bin/serverctl           # launch the TUI (q or ctrl+c quits, ? help, ctrl+p palette)
-bin/serverctl -version  # print the build version and exit
+bin/serverctl                  # launch the TUI (q or ctrl+c quits, ? help, ctrl+p palette)
+bin/serverctl -config FILE     # launch with a specific config file
+bin/serverctl -version         # print the build version and exit
 ```
+
+## Configuration
+
+serverctl reads `$XDG_CONFIG_HOME/serverctl/config.yaml` (usually
+`~/.config/serverctl/config.yaml`); `-config` overrides the location. A missing
+file is fine: the built-in defaults apply. Invalid values fail before the TUI
+starts.
+
+```yaml
+theme: dark              # dark | light
+refresh_seconds: 2       # shell-wide cadence for Dashboard/Processes
+intervals:               # per-chain self-tick cadences, in seconds
+  services: 5
+  logs: 1
+  storage: 30
+  network.interfaces: 2
+  network.sockets: 5
+  packages: 30
+  users.sessions: 10
+  users.attempts: 30
+  containers: 10
+keys:                    # global action -> key
+  quit: q
+  palette: ctrl+p
+  help: "?"
+  next_screen: tab
+  prev_screen: shift+tab
+  up: up
+  down: down
+  select: enter
+  back: esc
+screen_keys:             # screen -> action -> key
+  processes:
+    kill: K
+    term: x
+  services:
+    stop: X
+```
+
+`keys` and `screen_keys` change only the actions you list; omitted actions keep
+their built-in defaults. The configurable screen actions are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md) §6; table and viewport navigation keys are
+built-in. Mutating actions also write the local audit trail at
+`$XDG_STATE_HOME/serverctl/audit.log` (default
+`~/.local/state/serverctl/audit.log`).
 
 ## Privileges
 
