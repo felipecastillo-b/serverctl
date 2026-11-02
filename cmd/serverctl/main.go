@@ -12,6 +12,7 @@ import (
 	"github.com/felipecastillo-b/serverctl/internal/config"
 	"github.com/felipecastillo-b/serverctl/internal/ui/app"
 	"github.com/felipecastillo-b/serverctl/internal/ui/keys"
+	"github.com/felipecastillo-b/serverctl/internal/ui/screens"
 )
 
 // version is injected at build time via -ldflags "-X main.version=<version>".
@@ -58,6 +59,9 @@ func run(configPath string) error {
 	global := keys.DefaultGlobal()
 	if err := global.ApplyOverrides(cfg.Keys); err != nil {
 		return fmt.Errorf("invalid keybinding override: %w", err)
+	}
+	if err := screens.ValidateScreenKeys(cfg.ScreenKeys); err != nil {
+		return fmt.Errorf("invalid screen keybinding override: %w", err)
 	}
 
 	program := tea.NewProgram(app.New(cfg), tea.WithAltScreen(), tea.WithMouseCellMotion())

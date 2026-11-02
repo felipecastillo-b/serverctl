@@ -2,6 +2,8 @@ package screens
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,6 +53,73 @@ func (s sortKey) String() string {
 	}
 }
 
+// processKeys holds the configurable actions of the processes screen.
+type processKeys struct {
+	Enter, Term, Kill, SortCPU, SortMem, SortPID, SortName, Filter key.Binding
+}
+
+// defaultProcessKeys returns the built-in processes bindings.
+func defaultProcessKeys() processKeys {
+	return processKeys{
+		Enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open detail")),
+		Term:     key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "send TERM")),
+		Kill:     key.NewBinding(key.WithKeys("k"), key.WithHelp("k", "send KILL")),
+		SortCPU:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "sort by cpu")),
+		SortMem:  key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "sort by mem")),
+		SortPID:  key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "sort by pid")),
+		SortName: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name")),
+		Filter:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	}
+}
+
+// slots maps the config action names of the screen_keys section to their
+// bindings.
+func (k *processKeys) slots() map[string]*key.Binding {
+	return map[string]*key.Binding{
+		"enter":     &k.Enter,
+		"term":      &k.Term,
+		"kill":      &k.Kill,
+		"sort_cpu":  &k.SortCPU,
+		"sort_mem":  &k.SortMem,
+		"sort_pid":  &k.SortPID,
+		"sort_name": &k.SortName,
+		"filter":    &k.Filter,
+	}
+}
+
+// apply replaces the overridden bindings, keeping each action's help
+// description. Every entry is validated before any binding changes, so a
+// bad override leaves the defaults intact.
+func (k *processKeys) apply(overrides map[string]string) error {
+	slots := k.slots()
+	names := slices.Sorted(maps.Keys(slots))
+	for _, action := range slices.Sorted(maps.Keys(overrides)) {
+		if _, ok := slots[action]; !ok {
+			return fmt.Errorf("unknown action %q for screen %q must be one of: %s",
+				action, "processes", strings.Join(names, ", "))
+		}
+		if strings.TrimSpace(overrides[action]) == "" {
+			return fmt.Errorf("empty key for screen %q action %q", "processes", action)
+		}
+	}
+	for action, keyStr := range overrides {
+		keyStr = strings.TrimSpace(keyStr)
+		binding := slots[action]
+		*binding = key.NewBinding(
+			key.WithKeys(keyStr),
+			key.WithHelp(keyStr, binding.Help().Desc),
+		)
+	}
+	return nil
+}
+
+// hints returns the bindings in help-overlay order.
+func (k *processKeys) hints() []key.Binding {
+	return []key.Binding{
+		k.Enter, k.Term, k.Kill, k.SortCPU, k.SortMem, k.SortPID, k.SortName, k.Filter,
+	}
+}
+
 // processes is the live process table screen: sort, filter and confirmation
 // gated signals over the /proc listing collected by m3a.
 type processes struct {
@@ -58,6 +127,7 @@ type processes struct {
 	theme   theme.Theme
 	sender  SignalSender
 	tracker collectors.ProcessTracker
+	keys    processKeys
 
 	procs []core.Process // last collected listing, CpuPct filled
 	view  []core.Process // sorted and filtered slice backing the table
@@ -87,14 +157,16 @@ type processes struct {
 }
 
 // NewProcesses builds the processes screen collecting from sys, rendering
-// with th and delivering signals through sender.
-func NewProcesses(sys collectors.System, th theme.Theme, sender SignalSender) Screen {
-	return newProcesses(sys, th, sender)
+// with th and delivering signals through sender. overrides are the screen's
+// entries of the config's screen_keys section.
+func NewProcesses(sys collectors.System, th theme.Theme, sender SignalSender, overrides map[string]string) Screen {
+	return newProcesses(sys, th, sender, overrides)
 }
 
 // newProcesses is the concrete constructor; tests use it for white-box
 // state assertions.
-func newProcesses(sys collectors.System, th theme.Theme, sender SignalSender) *processes {
+func newProcesses(sys collectors.System, th theme.Theme, sender SignalSender,
+	overrides map[string]string) *processes {
 	filter := textinput.New()
 	filter.Prompt = "/"
 	filter.CharLimit = 64
@@ -111,12 +183,16 @@ func newProcesses(sys collectors.System, th theme.Theme, sender SignalSender) *p
 		}),
 	)
 
+	keys := defaultProcessKeys()
+	_ = keys.apply(overrides)
+
 	return &processes{
 		sys:    sys,
 		theme:  th,
 		sender: sender,
 		table:  tbl,
 		filter: filter,
+		keys:   keys,
 		// CPU is the natural first sort of a process monitor, best first.
 		sortKey:   sortCPU,
 		desc:      true,
@@ -230,24 +306,24 @@ func (p *processes) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 		return p, cmd, true
 	}
 
-	switch msg.String() {
-	case "enter":
+	switch {
+	case key.Matches(msg, p.keys.Enter):
 		return p, p.openDetail(), true
-	case "/":
+	case key.Matches(msg, p.keys.Filter):
 		p.filtering = true
 		p.filter.Focus()
 		return p, nil, true
-	case "t":
+	case key.Matches(msg, p.keys.Term):
 		return p, p.requestSignal(actions.SignalTerm), true
-	case "k":
+	case key.Matches(msg, p.keys.Kill):
 		return p, p.requestSignal(actions.SignalKill), true
-	case "c":
+	case key.Matches(msg, p.keys.SortCPU):
 		p.applySort(sortCPU)
-	case "m":
+	case key.Matches(msg, p.keys.SortMem):
 		p.applySort(sortMem)
-	case "p":
+	case key.Matches(msg, p.keys.SortPID):
 		p.applySort(sortPID)
-	case "n":
+	case key.Matches(msg, p.keys.SortName):
 		p.applySort(sortName)
 	default:
 		// Only the navigation keys the table actually consumes are
@@ -524,16 +600,7 @@ func (p *processes) SignalTarget() (SignalTarget, bool) {
 // Hints implements Screen: the processes keymap as the help overlay shows
 // it below the global section.
 func (p *processes) Hints() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open detail")),
-		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "send TERM")),
-		key.NewBinding(key.WithKeys("k"), key.WithHelp("k", "send KILL")),
-		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "sort by cpu")),
-		key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "sort by mem")),
-		key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "sort by pid")),
-		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "sort by name")),
-		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	}
+	return p.keys.hints()
 }
 
 // View renders the table with a filter line and a status line, or the

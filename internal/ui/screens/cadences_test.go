@@ -49,7 +49,7 @@ func TestAllInjectsCadences(t *testing.T) {
 	cad.UsersAttempts = 15 * time.Second
 	cad.Containers = 16 * time.Second
 
-	list := All(theme.Dark(), collectors.New("/nonexistent-fixtures"), cad)
+	list := All(theme.Dark(), collectors.New("/nonexistent-fixtures"), cad, nil)
 
 	if s := list[Services].(*services); s.interval != 7*time.Second {
 		t.Errorf("services interval = %v, want 7s", s.interval)
@@ -78,7 +78,7 @@ func TestAllInjectsCadences(t *testing.T) {
 // with a zero Cadences must boot every chain on the built-in defaults,
 // so a partially wired config can never stall a screen on a zero tick.
 func TestAllDefaultsWhenCadencesZero(t *testing.T) {
-	list := All(theme.Dark(), collectors.New("/nonexistent-fixtures"), Cadences{})
+	list := All(theme.Dark(), collectors.New("/nonexistent-fixtures"), Cadences{}, nil)
 	want := DefaultCadences()
 
 	if s := list[Services].(*services); s.interval != want.Services {

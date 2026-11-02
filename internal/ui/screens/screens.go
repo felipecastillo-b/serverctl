@@ -182,15 +182,18 @@ type Screen interface {
 // All() is the intervals injection point of ARCHITECTURE.md §3: the
 // app resolves the config's `intervals` section into cad, and each
 // constructor receives its own chain's cadence (Network and Access
-// receive both of theirs).
-func All(th theme.Theme, sys collectors.System, cad Cadences) []Screen {
+// receive both of theirs). screenKeys is the config's `screen_keys`
+// section, passed to each screen that adopted overrides; absent screens
+// keep their built-in bindings.
+func All(th theme.Theme, sys collectors.System, cad Cadences,
+	screenKeys map[string]map[string]string) []Screen {
 	out := make([]Screen, len(catalog))
 	for i, s := range catalog {
 		switch s.id {
 		case Dashboard:
 			out[i] = NewDashboard(sys, th)
 		case Processes:
-			out[i] = NewProcesses(sys, th, actions.Actor{})
+			out[i] = NewProcesses(sys, th, actions.Actor{}, screenKeys["processes"])
 		case Services:
 			// collectors.System implements core.UnitLister over D-Bus
 			// and actions.Actor implements core.UnitManager (m4a).

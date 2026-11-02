@@ -107,7 +107,7 @@ func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 	_ = global.ApplyOverrides(cfg.Keys)
 
 	th := theme.FromName(cfg.Theme)
-	list := screens.All(th, sys, cadences(cfg))
+	list := screens.All(th, sys, cadences(cfg), cfg.ScreenKeys)
 	titles := make([]string, len(list))
 	for i, s := range list {
 		titles[i] = s.Title()
