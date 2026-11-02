@@ -120,7 +120,7 @@ func TestPaletteEmptyResultsStayPut(t *testing.T) {
 	for _, r := range "zzz" {
 		m, _ = send(t, m, runesKey(string(r)))
 	}
-	if view := m.View(); !strings.Contains(view, "no matching module") {
+	if view := m.View(); !strings.Contains(view, "no matching command") {
 		t.Fatalf("zero matches must render the empty state:\n%s", view)
 	}
 	m, _ = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})

@@ -11,8 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/felipecastillo-b/serverctl/internal/actions"
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/config"
+	"github.com/felipecastillo-b/serverctl/internal/ui/confirm"
 	"github.com/felipecastillo-b/serverctl/internal/ui/help"
 	"github.com/felipecastillo-b/serverctl/internal/ui/keys"
 	"github.com/felipecastillo-b/serverctl/internal/ui/palette"
@@ -47,9 +49,32 @@ type Model struct {
 	// because Model runs on value receivers and tests mutate fields
 	// directly.
 	palette palette.Model
-	width   int
-	height  int
-	now     time.Time
+	// paletteActions is the context-action list offered by the palette;
+	// the index in Model.paletteActions matches the item appended after
+	// the module titles.
+	paletteActions []paletteAction
+	// confirm is the root-owned confirmation gating palette actions, and
+	// confirmOpen is its exclusivity gate, like a screen's modalOpen: while
+	// it is set every key and mouse event reaches the modal and is
+	// swallowed.
+	confirm     confirm.Model
+	confirmOpen bool
+	// pendingAction is the palette action awaiting the root confirmation.
+	pendingAction paletteAction
+	// signal dispatches a confirmed process signal; production points it
+	// at actions.Actor, tests inject fakes.
+	signal func(pid int, sig actions.ProcessSignal) error
+	width  int
+	height int
+	now    time.Time
+}
+
+// paletteAction is one context action offered by the palette. The index in
+// Model.paletteActions matches the item appended after the module titles.
+type paletteAction struct {
+	pid  int
+	name string
+	sig  actions.ProcessSignal
 }
 
 // New builds the root model against the live kernel interfaces.
@@ -63,19 +88,23 @@ func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 	global := keys.DefaultGlobal()
 	_ = global.ApplyOverrides(cfg.Keys)
 
-	list := screens.All(theme.FromName(cfg.Theme), sys, cadences(cfg))
+	th := theme.FromName(cfg.Theme)
+	list := screens.All(th, sys, cadences(cfg))
 	titles := make([]string, len(list))
 	for i, s := range list {
 		titles[i] = s.Title()
 	}
+	actor := actions.Actor{}
 
 	return Model{
 		cfg:     cfg,
-		theme:   theme.FromName(cfg.Theme),
+		theme:   th,
 		keys:    global,
 		sidebar: sidebar.New(screens.IDs(), titles),
 		screens: list,
-		palette: palette.New(titles, theme.FromName(cfg.Theme)),
+		palette: palette.New(titles, th),
+		confirm: confirm.New("", th),
+		signal:  actor.Signal,
 		active:  screens.Dashboard,
 		now:     time.Now(),
 	}
@@ -182,6 +211,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.palette.Open() {
 		return m.handlePaletteKey(msg)
 	}
+	if m.confirmOpen {
+		m.confirm.UpdateKey(msg)
+		return m.resolveRootConfirm()
+	}
 
 	updated, cmd, handled := m.topScreen().UpdateKey(msg)
 	if handled {
@@ -193,7 +226,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Palette):
-		m.palette.Show()
+		m.openPalette()
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = true
 	case key.Matches(msg, m.keys.NextScreen):
@@ -227,11 +260,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handlePaletteKey routes a keypress through the open palette, the same
 // modal-first claiming the help overlay applies: the palette key
-// toggles it closed, esc closes it, enter jumps to the highlighted
-// module via setActive, and every other key is claimed by the palette
-// itself (filter text or swallowed). Data messages keep flowing to the
-// active screen underneath; the palette only claims keys and the
-// render.
+// toggles it closed, esc closes it, enter selects the highlighted item,
+// and every other key is claimed by the palette itself (filter text or
+// swallowed). The first len(screens) items jump to their module via
+// setActive; items past that are context actions gated by the root
+// confirmation. Data messages keep flowing to the active screen
+// underneath; the palette only claims keys and the render.
 func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Palette) {
 		m.palette.Hide()
@@ -248,10 +282,83 @@ func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.palette.Hide()
-		updated, jumpCmd := m.setActive(screens.IDs()[index])
-		return updated, jumpCmd
+		if index < len(m.screens) {
+			updated, jumpCmd := m.setActive(screens.IDs()[index])
+			return updated, jumpCmd
+		}
+		actionIndex := index - len(m.screens)
+		if actionIndex < 0 || actionIndex >= len(m.paletteActions) {
+			return m, cmd
+		}
+		pending := m.paletteActions[actionIndex]
+		m.pendingAction = pending
+		m.confirm.Reset(fmt.Sprintf("Send %s to pid %d (%s)?", pending.sig, pending.pid, pending.name))
+		m.confirmOpen = true
 	}
 	return m, cmd
+}
+
+// openPalette rebuilds the palette items and opens it. The module titles
+// always come first so their indices match screens; when the top screen
+// reports a selected process, the TERM and KILL context actions follow
+// and their paletteAction entries line up with those indices.
+func (m *Model) openPalette() {
+	items := make([]string, 0, len(m.screens)+2)
+	for _, s := range m.screens {
+		items = append(items, s.Title())
+	}
+	m.paletteActions = nil
+	if targeter, ok := m.topScreen().(screens.SignalTargeter); ok {
+		if target, ok := targeter.SignalTarget(); ok {
+			for _, sig := range []actions.ProcessSignal{actions.SignalTerm, actions.SignalKill} {
+				items = append(items,
+					fmt.Sprintf("Send %s to pid %d (%s)", sig, target.PID, target.Name))
+				m.paletteActions = append(m.paletteActions,
+					paletteAction{pid: target.PID, name: target.Name, sig: sig})
+			}
+		}
+	}
+	m.palette.SetItems(items)
+	m.palette.Show()
+}
+
+// resolveRootConfirm closes the root confirmation once decided and, when
+// confirmed, dispatches the pending palette action. The shell records the
+// decision before any dispatch; a failed confirmed audit aborts the
+// signal, while the action layer audits the dispatch outcome itself.
+func (m Model) resolveRootConfirm() (Model, tea.Cmd) {
+	action := m.pendingAction
+	switch m.confirm.Decision() {
+	case confirm.Pending:
+		return m, nil
+	case confirm.Confirmed:
+		m.confirmOpen = false
+		m.pendingAction = paletteAction{}
+		err := actions.Record("process.signal",
+			fmt.Sprintf("pid %d (%s)", action.pid, action.name), "confirmed", "")
+		if err != nil {
+			return m, func() tea.Msg {
+				return screens.ProcessSignalResultMsg{
+					PID: action.pid, Signal: action.sig, Err: err}
+			}
+		}
+		signal := m.signal
+		return m, func() tea.Msg {
+			return screens.ProcessSignalResultMsg{
+				PID: action.pid, Signal: action.sig,
+				Err: signal(action.pid, action.sig)}
+		}
+	case confirm.Denied:
+		m.confirmOpen = false
+		m.pendingAction = paletteAction{}
+		err := actions.Record("process.signal",
+			fmt.Sprintf("pid %d (%s)", action.pid, action.name), "denied", "")
+		return m, func() tea.Msg {
+			return screens.ProcessSignalResultMsg{
+				PID: action.pid, Signal: action.sig, Cancelled: true, Err: err}
+		}
+	}
+	return m, nil
 }
 
 // handleMouse offers every press to the active screen first: a screen
@@ -271,10 +378,20 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	event := tea.MouseEvent(msg)
 	local := msg
 	local.X -= sidebar.Width
 	local.Y--
+	if m.confirmOpen {
+		// Model runs on value receivers, so the geometry recorded by the
+		// last View render cannot survive on this copied field. Seed it
+		// with the same bounds View uses before hit-testing; the render
+		// is otherwise pure and its output is discarded.
+		m.confirm.View(m.contentWidth(), m.height-2)
+		m.confirm.UpdateMouse(local)
+		return m.resolveRootConfirm()
+	}
+
+	event := tea.MouseEvent(msg)
 	updated, cmd, handled := m.topScreen().UpdateMouse(local)
 	if handled {
 		m.setTop(updated)
@@ -329,6 +446,14 @@ func (m Model) View() string {
 			m.theme, m.width, contentHeight)
 	case m.palette.Open():
 		body = m.palette.View(m.width, contentHeight)
+	case m.confirmOpen:
+		// The root confirmation replaces the content pane only: the
+		// sidebar, header and footer stay visible, and the event
+		// translation above keeps matching what the modal renders.
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			m.sidebar.View(m.theme, contentHeight),
+			m.confirm.View(m.contentWidth(), contentHeight),
+		)
 	default:
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			m.sidebar.View(m.theme, contentHeight),

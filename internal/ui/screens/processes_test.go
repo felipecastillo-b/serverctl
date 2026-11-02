@@ -37,6 +37,7 @@ func keyMsg(s string) tea.KeyMsg {
 // fixtures with a recording sender, and runs the first collection.
 func newFixtureScreen(t *testing.T) (*processes, *fakeSender) {
 	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	fake := &fakeSender{}
 	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), fake)
 	cmd := p.Init()

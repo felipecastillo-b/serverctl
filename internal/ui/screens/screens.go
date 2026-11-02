@@ -26,6 +26,27 @@ type OpenDetailMsg struct {
 	Lines []string
 }
 
+// SignalTarget is the process a palette action can target.
+type SignalTarget struct {
+	PID  int
+	Name string
+}
+
+// SignalTargeter lets the shell offer actions for the active screen's
+// selected row. Screens without row actions do not implement it.
+type SignalTargeter interface {
+	SignalTarget() (SignalTarget, bool)
+}
+
+// ProcessSignalResultMsg reports a root-dispatched process signal outcome
+// to the screen that owns the process listing.
+type ProcessSignalResultMsg struct {
+	PID       int
+	Signal    actions.ProcessSignal
+	Err       error
+	Cancelled bool
+}
+
 // Cadences carries the refresh intervals of the nine self-ticked
 // collection chains of ARCHITECTURE.md §3 from the config layer to
 // the screen constructors. All() is the injection point: the app

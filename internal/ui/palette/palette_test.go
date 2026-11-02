@@ -80,7 +80,7 @@ func TestTypingFiltersResults(t *testing.T) {
 	if _, ok := m.SelectedIndex(); ok {
 		t.Fatal("no result may stay selectable with zero matches")
 	}
-	if view := m.View(100, 30); !strings.Contains(view, "no matching module") {
+	if view := m.View(100, 30); !strings.Contains(view, "no matching command") {
 		t.Errorf("zero matches must render the empty state:\n%s", view)
 	}
 	if action := press(t, m, tea.KeyEnter); action != ActionNone {
@@ -114,6 +114,24 @@ func TestEnterSelectsHighlightedResult(t *testing.T) {
 	}
 }
 
+func TestSetItemsReplacesCandidates(t *testing.T) {
+	m := newShown(t)
+
+	items := append(append([]string{}, catalogTitles...), "Send TERM to pid 42 (kthreadd)")
+	m.SetItems(items)
+	m.Show()
+
+	typeRunes(t, m, "term")
+	got, ok := m.SelectedIndex()
+	if !ok || got != len(catalogTitles) {
+		t.Fatalf("the new item must be searchable at index %d, got index %d (ok=%v)",
+			len(catalogTitles), got, ok)
+	}
+	if view := m.View(100, 30); !strings.Contains(view, "Send TERM to pid 42") {
+		t.Errorf("the new item must render with the other results:\n%s", view)
+	}
+}
+
 func TestEscReportsClose(t *testing.T) {
 	m := newShown(t)
 
@@ -142,7 +160,7 @@ func TestOpenPaletteClaimsKeysTheScreensWouldActOn(t *testing.T) {
 	// (The rendered filter value itself cannot be substring-matched:
 	// the focused cursor wraps the last character in escape codes.)
 	typeRunes(t, m, "q?")
-	if view := m.View(100, 30); !strings.Contains(view, "no matching module") {
+	if view := m.View(100, 30); !strings.Contains(view, "no matching command") {
 		t.Errorf("typed runes must reach the filter and narrow the results:\n%s", view)
 	}
 	for _, typ := range []tea.KeyType{tea.KeyTab, tea.KeyPgUp, tea.KeyCtrlU} {

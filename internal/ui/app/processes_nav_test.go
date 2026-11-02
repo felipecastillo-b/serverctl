@@ -14,6 +14,7 @@ import (
 // the processes screen active and its first collection round delivered.
 func newProcessesModel(t *testing.T) Model {
 	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := NewWithSystem(config.Config{}, collectors.New("../../collectors/testdata"))
 	m, _ = send(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
 	m, cmd := send(t, m, tea.KeyMsg{Type: tea.KeyTab}) // Dashboard → Processes

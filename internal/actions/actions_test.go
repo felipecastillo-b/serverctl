@@ -1,8 +1,11 @@
 package actions_test
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -46,6 +49,8 @@ func TestActorSignalValidation(t *testing.T) {
 // validation and attempts delivery: pid 4194303 does not exist, so the
 // kernel answers ESRCH (a validation failure would be a different error).
 func TestActorSignalReachesKernel(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
 	signals := map[actions.ProcessSignal]string{
 		actions.SignalTerm: "TERM",
 		actions.SignalKill: "KILL",
@@ -72,6 +77,7 @@ func TestActorSignalTerminatesChild(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: signals a real child process")
 	}
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	sleepPath, err := exec.LookPath("sleep")
 	if err != nil {
 		t.Skip("sleep binary not available")
@@ -97,5 +103,39 @@ func TestActorSignalTerminatesChild(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("child did not exit within 5s after TERM")
+	}
+}
+
+// TestActorSignalAuditsOutcome pins the §7 trail for signals: a failed
+// delivery is recorded after validation, with the pid as target, result
+// "failed" and the delivery error as detail.
+func TestActorSignalAuditsOutcome(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	var actor actions.Actor
+	if err := actor.Signal(4194303, actions.SignalTerm); err == nil {
+		t.Fatal("expected ESRCH for nonexistent pid, got nil")
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "serverctl", "audit.log"))
+	if err != nil {
+		t.Fatalf("read audit log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("audit log has %d lines, want 1:\n%s", len(lines), raw)
+	}
+	var entry actions.AuditEntry
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("decode audit line %q: %v", lines[0], err)
+	}
+	if entry.Action != "process.signal" || entry.Target != "pid 4194303" {
+		t.Errorf("entry action/target = %q/%q, want process.signal/pid 4194303",
+			entry.Action, entry.Target)
+	}
+	if entry.Result != "failed" || entry.Detail == "" {
+		t.Errorf("entry result/detail = %q/%q, want failed with a detail",
+			entry.Result, entry.Detail)
 	}
 }

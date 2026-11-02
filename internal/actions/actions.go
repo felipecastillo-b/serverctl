@@ -61,8 +61,9 @@ func (Actor) Signal(pid int, sig ProcessSignal) error {
 	if !ok {
 		return fmt.Errorf("actions: signal %s rejected: not in whitelist (TERM, KILL, HUP)", sig)
 	}
-	if err := syscall.Kill(pid, target); err != nil {
-		return fmt.Errorf("actions: send %s to pid %d: %w", sig, pid, err)
+	err := syscall.Kill(pid, target)
+	if err != nil {
+		err = fmt.Errorf("actions: send %s to pid %d: %w", sig, pid, err)
 	}
-	return nil
+	return auditOutcome("process.signal", fmt.Sprintf("pid %d", pid), err)
 }
