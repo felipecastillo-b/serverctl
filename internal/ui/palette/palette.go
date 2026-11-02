@@ -1,8 +1,9 @@
 // Package palette renders the command palette overlay: a filter input
-// above a fuzzy result list over the module titles (ARCHITECTURE.md
-// §6). While the palette is open it is an exclusive modal, like the
-// help overlay: the shell routes every key and mouse event to it and
-// swallows everything else.
+// above a fuzzy result list over the candidate commands the shell
+// supplies (module jumps plus context actions) (ARCHITECTURE.md §6).
+// While the palette is open it is an exclusive modal, like the help
+// overlay: the shell routes every key and mouse event to it and swallows
+// everything else.
 //
 // The palette is keyboard-only. The §6 parity rule requires every mouse
 // action to have a keyboard equivalent, not the reverse, so a modal
@@ -38,10 +39,10 @@ const (
 
 // Model is the command palette modal, in the confirm.Model shape:
 // pointer receivers mutate, value receivers read. The zero value is
-// not usable; build it with New. The candidate titles are the module
-// titles in catalog order; results are indices into that slice, so the
-// shell can map them back to screens without this package depending on
-// the screens package.
+// not usable; build it with New. The candidate items are supplied by
+// the shell: module titles in catalog order, optionally followed by
+// context actions. Results are indices into that slice, so the shell
+// can map them back without this package depending on screens.
 type Model struct {
 	titles []string
 	filter textinput.Model
@@ -54,7 +55,7 @@ type Model struct {
 	theme  theme.Theme
 }
 
-// New builds a closed palette over the module titles in catalog order.
+// New builds a closed palette over the given candidate items.
 func New(titles []string, th theme.Theme) Model {
 	// The textinput mirrors the processes screen's filter
 	// (processes.go): short prompt, bounded input, fixed width.
@@ -64,6 +65,18 @@ func New(titles []string, th theme.Theme) Model {
 	filter.CharLimit = 64
 	filter.Width = 24
 	return Model{titles: titles, filter: filter, theme: th}
+}
+
+// SetItems replaces the candidate items. The shell rebuilds the list on
+// every open so context actions can follow the active screen; an open
+// palette re-ranks the current filter against the new list and keeps the
+// cursor in range.
+func (m *Model) SetItems(items []string) {
+	m.titles = items
+	m.results = Search(m.filter.Value(), m.titles)
+	if m.cursor >= len(m.results) {
+		m.cursor = 0
+	}
 }
 
 // Open reports whether the palette is currently shown.
@@ -80,7 +93,7 @@ func (m *Model) Show() {
 	m.results = Search("", m.titles)
 }
 
-// Hide closes the palette without selecting a module.
+// Hide closes the palette without selecting a command.
 func (m *Model) Hide() {
 	m.open = false
 	m.filter.Blur()
@@ -138,7 +151,7 @@ func (m Model) SelectedIndex() (int, bool) {
 // and a hint line, in the help/confirm overlay shape. The highlighted
 // row inverts on the theme's Accent color — the role's first consumer.
 // A closed palette renders nothing. An honest empty state ("no matching
-// module") replaces the result list when the filter matches nothing.
+// command") replaces the result list when the filter matches nothing.
 func (m Model) View(width, height int) string {
 	if !m.open {
 		return ""
@@ -155,7 +168,7 @@ func (m Model) View(width, height int) string {
 	b.WriteString(m.filter.View())
 	b.WriteString("\n\n")
 	if len(m.results) == 0 {
-		b.WriteString(mutedStyle.Render("no matching module"))
+		b.WriteString(mutedStyle.Render("no matching command"))
 	} else {
 		for i, idx := range m.results {
 			row := "  " + m.titles[idx]
@@ -169,7 +182,7 @@ func (m Model) View(width, height int) string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("↑/↓ move · enter jump · esc close"))
+	b.WriteString(mutedStyle.Render("↑/↓ move · enter select · esc close"))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

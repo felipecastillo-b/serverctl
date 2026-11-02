@@ -28,13 +28,6 @@ type processesDataMsg struct {
 	err   error
 }
 
-// signalResultMsg reports the outcome of one confirmed signal action.
-type signalResultMsg struct {
-	pid int
-	sig actions.ProcessSignal
-	err error
-}
-
 // sortKey names the column the table is ordered by.
 type sortKey int
 
@@ -182,11 +175,14 @@ func (p *processes) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			p.lastGood = time.Now()
 		}
 		p.reapply()
-	case signalResultMsg:
-		if msg.err != nil {
-			p.status = fmt.Sprintf("%s pid %d failed: %v", msg.sig, msg.pid, msg.err)
-		} else {
-			p.status = fmt.Sprintf("%s sent to pid %d", msg.sig, msg.pid)
+	case ProcessSignalResultMsg:
+		switch {
+		case msg.Err != nil:
+			p.status = fmt.Sprintf("%s pid %d failed: %v", msg.Signal, msg.PID, msg.Err)
+		case msg.Cancelled:
+			p.status = "cancelled"
+		default:
+			p.status = fmt.Sprintf("%s sent to pid %d", msg.Signal, msg.PID)
 		}
 	}
 	return p, nil
@@ -364,10 +360,10 @@ func (p *processes) resolveModal() tea.Cmd {
 }
 
 // signal delivers the whitelisted action asynchronously; the outcome rides
-// back as a signalResultMsg for the status line.
+// back as a ProcessSignalResultMsg for the status line.
 func (p *processes) signal(pid int, sig actions.ProcessSignal) tea.Cmd {
 	return func() tea.Msg {
-		return signalResultMsg{pid: pid, sig: sig, err: p.sender.Signal(pid, sig)}
+		return ProcessSignalResultMsg{PID: pid, Signal: sig, Err: p.sender.Signal(pid, sig)}
 	}
 }
 
@@ -501,6 +497,16 @@ func startAt(t time.Time) string {
 
 // Title implements Screen.
 func (p *processes) Title() string { return "Processes" }
+
+// SignalTarget implements SignalTargeter: it reports the cursor's process
+// so the shell can offer palette signal actions for the selected row.
+func (p *processes) SignalTarget() (SignalTarget, bool) {
+	if len(p.view) == 0 {
+		return SignalTarget{}, false
+	}
+	row := p.view[p.table.Cursor()]
+	return SignalTarget{PID: row.PID, Name: row.Name}, true
+}
 
 // Hints implements Screen: the processes keymap as the help overlay shows
 // it below the global section.
