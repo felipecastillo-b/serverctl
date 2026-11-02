@@ -668,6 +668,34 @@ func TestServicesFailedCountCallout(t *testing.T) {
 	}
 }
 
+// TestServicesEnterOpensDetail pins the drill-down: enter on the
+// selected row emits the static detail for that unit.
+func TestServicesEnterOpensDetail(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+	row := s.view[s.table.Cursor()]
+
+	_, cmd, handled := s.UpdateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled {
+		t.Fatal("enter must be claimed by the services screen")
+	}
+	if cmd == nil {
+		t.Fatal("enter on a selected row must emit the detail command")
+	}
+	msg, ok := cmd().(OpenDetailMsg)
+	if !ok {
+		t.Fatalf("enter command produced %T, want OpenDetailMsg", cmd())
+	}
+	if want := "Unit " + row.Name; msg.Title != want {
+		t.Errorf("title = %q, want %q", msg.Title, want)
+	}
+	body := strings.Join(msg.Lines, "\n")
+	for _, want := range []string{"Unit:", "Description:", row.Description} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail lines missing %q:\n%s", want, body)
+		}
+	}
+}
+
 // TestServicesStaleRoundAgesListing pins the §5 keeps-last-good
 // state: a failed round keeps the last good listing standing while
 // the status line carries the error plus the muted age of that

@@ -228,6 +228,36 @@ func TestProcessesNoSelection(t *testing.T) {
 	}
 }
 
+// TestProcessesEnterOpensDetail pins the drill-down: enter on the
+// selected row emits the static detail for that process.
+func TestProcessesEnterOpensDetail(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	row := p.view[p.table.Cursor()]
+
+	_, cmd, handled := p.UpdateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled {
+		t.Fatal("enter must be claimed by the processes screen")
+	}
+	if cmd == nil {
+		t.Fatal("enter on a selected row must emit the detail command")
+	}
+	msg, ok := cmd().(OpenDetailMsg)
+	if !ok {
+		t.Fatalf("enter command produced %T, want OpenDetailMsg", cmd())
+	}
+	for _, want := range []string{fmt.Sprintf("%d", row.PID), row.Name} {
+		if !strings.Contains(msg.Title, want) {
+			t.Errorf("title %q missing %q", msg.Title, want)
+		}
+	}
+	body := strings.Join(msg.Lines, "\n")
+	for _, want := range []string{"PID:", "Command:", row.User} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail lines missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestProcessesNavKeysClaimedAndOthersFallThrough(t *testing.T) {
 	p, _ := newFixtureScreen(t)
 

@@ -1,6 +1,7 @@
 package screens
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -59,6 +60,25 @@ func (d *Detail) Title() string { return d.title }
 // Hints is empty: details add no bindings; esc remains the shell's back
 // key.
 func (d *Detail) Hints() []key.Binding { return nil }
+
+// renderDetailFields renders label/value pairs as aligned lines, one per
+// field, with the colonized labels padded to the widest one so every value
+// starts in the same column.
+func renderDetailFields(fields [][2]string) []string {
+	widest := 0
+	for _, field := range fields {
+		label := field[0] + ":"
+		if len(label) > widest {
+			widest = len(label)
+		}
+	}
+	lines := make([]string, len(fields))
+	for i, field := range fields {
+		label := field[0] + ":"
+		lines[i] = fmt.Sprintf("%-*s  %s", widest, label, field[1])
+	}
+	return lines
+}
 
 // clipDetailLine truncates line to at most width terminal cells without
 // splitting a rune. Display width is measured with lipgloss.Width so a

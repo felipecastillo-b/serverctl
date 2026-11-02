@@ -41,3 +41,27 @@ func TestDetailTitle(t *testing.T) {
 		t.Fatalf("Title() = %q, want %q", got, "Process 42")
 	}
 }
+
+// TestRenderDetailFieldsAlignsLabels pins the field rendering: one line
+// per pair, labels padded to the widest one plus the colon, and every
+// value starting at the same column.
+func TestRenderDetailFieldsAlignsLabels(t *testing.T) {
+	lines := renderDetailFields([][2]string{
+		{"PID", "42"},
+		{"Description", "a longer label"},
+	})
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2: %v", len(lines), lines)
+	}
+	if !strings.HasPrefix(lines[0], "PID:") {
+		t.Errorf("line %q must carry its colon", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "Description:") {
+		t.Errorf("line %q must carry its colon", lines[1])
+	}
+	first := strings.Index(lines[0], "42")
+	second := strings.Index(lines[1], "a longer label")
+	if first != second {
+		t.Errorf("values start at columns %d and %d:\n%s\n%s", first, second, lines[0], lines[1])
+	}
+}
