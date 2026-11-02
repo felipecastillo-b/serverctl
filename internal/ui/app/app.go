@@ -64,17 +64,35 @@ type Model struct {
 	// signal dispatches a confirmed process signal; production points it
 	// at actions.Actor, tests inject fakes.
 	signal func(pid int, sig actions.ProcessSignal) error
-	width  int
-	height int
-	now    time.Time
+	// unitAction dispatches a unit lifecycle verb; production points it
+	// at actions.Actor, tests inject fakes.
+	unitAction func(action screens.UnitAction, unit string) error
+	width      int
+	height     int
+	now        time.Time
 }
+
+// paletteActionKind distinguishes the context-action families the palette
+// lists after the module titles.
+type paletteActionKind int
+
+const (
+	paletteProcessSignal paletteActionKind = iota
+	paletteUnitLifecycle
+)
 
 // paletteAction is one context action offered by the palette. The index in
 // Model.paletteActions matches the item appended after the module titles.
 type paletteAction struct {
+	kind paletteActionKind
+	// process signal
 	pid  int
 	name string
 	sig  actions.ProcessSignal
+	// unit lifecycle
+	action  screens.UnitAction
+	unit    string
+	confirm bool
 }
 
 // New builds the root model against the live kernel interfaces.
@@ -105,8 +123,18 @@ func NewWithSystem(cfg config.Config, sys collectors.System) Model {
 		palette: palette.New(titles, th),
 		confirm: confirm.New("", th),
 		signal:  actor.Signal,
-		active:  screens.Dashboard,
-		now:     time.Now(),
+		unitAction: func(action screens.UnitAction, unit string) error {
+			switch action {
+			case screens.UnitStop:
+				return actor.Stop(unit)
+			case screens.UnitRestart:
+				return actor.Restart(unit)
+			default:
+				return actor.Start(unit)
+			}
+		},
+		active: screens.Dashboard,
+		now:    time.Now(),
 	}
 }
 
@@ -291,8 +319,11 @@ func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		pending := m.paletteActions[actionIndex]
+		if !pending.confirm {
+			return m, m.dispatchPaletteAction(pending)
+		}
 		m.pendingAction = pending
-		m.confirm.Reset(fmt.Sprintf("Send %s to pid %d (%s)?", pending.sig, pending.pid, pending.name))
+		m.confirm.Reset(m.paletteQuestion(pending))
 		m.confirmOpen = true
 	}
 	return m, cmd
@@ -300,10 +331,11 @@ func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // openPalette rebuilds the palette items and opens it. The module titles
 // always come first so their indices match screens; when the top screen
-// reports a selected process, the TERM and KILL context actions follow
-// and their paletteAction entries line up with those indices.
+// reports a selected process, the TERM and KILL context actions follow,
+// and when it reports a selected unit, the Start/Stop/Restart lifecycle
+// actions follow; their paletteAction entries line up with those indices.
 func (m *Model) openPalette() {
-	items := make([]string, 0, len(m.screens)+2)
+	items := make([]string, 0, len(m.screens)+5)
 	for _, s := range m.screens {
 		items = append(items, s.Title())
 	}
@@ -314,7 +346,23 @@ func (m *Model) openPalette() {
 				items = append(items,
 					fmt.Sprintf("Send %s to pid %d (%s)", sig, target.PID, target.Name))
 				m.paletteActions = append(m.paletteActions,
-					paletteAction{pid: target.PID, name: target.Name, sig: sig})
+					paletteAction{
+						kind: paletteProcessSignal, pid: target.PID,
+						name: target.Name, sig: sig, confirm: true,
+					})
+			}
+		}
+	}
+	if targeter, ok := m.topScreen().(screens.UnitTargeter); ok {
+		if target, ok := targeter.UnitTarget(); ok {
+			for _, action := range []screens.UnitAction{
+				screens.UnitStart, screens.UnitStop, screens.UnitRestart,
+			} {
+				items = append(items, unitActionTitle(action, target.Name))
+				m.paletteActions = append(m.paletteActions, paletteAction{
+					kind: paletteUnitLifecycle, action: action, unit: target.Name,
+					confirm: action != screens.UnitStart,
+				})
 			}
 		}
 	}
@@ -322,10 +370,72 @@ func (m *Model) openPalette() {
 	m.palette.Show()
 }
 
+// unitActionTitle is the palette item wording for a unit lifecycle verb.
+func unitActionTitle(action screens.UnitAction, unit string) string {
+	switch action {
+	case screens.UnitStop:
+		return fmt.Sprintf("Stop unit %s", unit)
+	case screens.UnitRestart:
+		return fmt.Sprintf("Restart unit %s", unit)
+	default:
+		return fmt.Sprintf("Start unit %s", unit)
+	}
+}
+
+// paletteQuestion is the root confirmation wording for act: process
+// signals name the pid and process, lifecycle verbs use the screen's §7
+// prompt.
+func (m Model) paletteQuestion(act paletteAction) string {
+	if act.kind == paletteUnitLifecycle {
+		return act.action.Question(act.unit)
+	}
+	return fmt.Sprintf("Send %s to pid %d (%s)?", act.sig, act.pid, act.name)
+}
+
+// auditDecision names act in the audit vocabulary: the action namespace
+// plus its target.
+func auditDecision(act paletteAction) (action, target string) {
+	if act.kind == paletteUnitLifecycle {
+		return act.action.Action(), act.unit
+	}
+	return "process.signal", fmt.Sprintf("pid %d (%s)", act.pid, act.name)
+}
+
+// dispatchPaletteAction returns the command that executes act through the
+// injected action layer and reports the outcome to the screen that owns
+// the target.
+func (m Model) dispatchPaletteAction(act paletteAction) tea.Cmd {
+	if act.kind == paletteUnitLifecycle {
+		unitAction := m.unitAction
+		return func() tea.Msg {
+			return screens.UnitActionResultMsg{
+				Action: act.action, Unit: act.unit,
+				Err: unitAction(act.action, act.unit)}
+		}
+	}
+	signal := m.signal
+	return func() tea.Msg {
+		return screens.ProcessSignalResultMsg{
+			PID: act.pid, Signal: act.sig,
+			Err: signal(act.pid, act.sig)}
+	}
+}
+
+// paletteResult builds the outcome message for act without dispatching:
+// the audit-failure and denial paths both use it.
+func paletteResult(act paletteAction, err error, cancelled bool) tea.Msg {
+	if act.kind == paletteUnitLifecycle {
+		return screens.UnitActionResultMsg{
+			Action: act.action, Unit: act.unit, Err: err, Cancelled: cancelled}
+	}
+	return screens.ProcessSignalResultMsg{
+		PID: act.pid, Signal: act.sig, Err: err, Cancelled: cancelled}
+}
+
 // resolveRootConfirm closes the root confirmation once decided and, when
 // confirmed, dispatches the pending palette action. The shell records the
 // decision before any dispatch; a failed confirmed audit aborts the
-// signal, while the action layer audits the dispatch outcome itself.
+// action, while the action layer audits the dispatch outcome itself.
 func (m Model) resolveRootConfirm() (Model, tea.Cmd) {
 	action := m.pendingAction
 	switch m.confirm.Decision() {
@@ -334,29 +444,18 @@ func (m Model) resolveRootConfirm() (Model, tea.Cmd) {
 	case confirm.Confirmed:
 		m.confirmOpen = false
 		m.pendingAction = paletteAction{}
-		err := actions.Record("process.signal",
-			fmt.Sprintf("pid %d (%s)", action.pid, action.name), "confirmed", "")
+		auditAction, target := auditDecision(action)
+		err := actions.Record(auditAction, target, "confirmed", "")
 		if err != nil {
-			return m, func() tea.Msg {
-				return screens.ProcessSignalResultMsg{
-					PID: action.pid, Signal: action.sig, Err: err}
-			}
+			return m, func() tea.Msg { return paletteResult(action, err, false) }
 		}
-		signal := m.signal
-		return m, func() tea.Msg {
-			return screens.ProcessSignalResultMsg{
-				PID: action.pid, Signal: action.sig,
-				Err: signal(action.pid, action.sig)}
-		}
+		return m, m.dispatchPaletteAction(action)
 	case confirm.Denied:
 		m.confirmOpen = false
 		m.pendingAction = paletteAction{}
-		err := actions.Record("process.signal",
-			fmt.Sprintf("pid %d (%s)", action.pid, action.name), "denied", "")
-		return m, func() tea.Msg {
-			return screens.ProcessSignalResultMsg{
-				PID: action.pid, Signal: action.sig, Cancelled: true, Err: err}
-		}
+		auditAction, target := auditDecision(action)
+		err := actions.Record(auditAction, target, "denied", "")
+		return m, func() tea.Msg { return paletteResult(action, err, true) }
 	}
 	return m, nil
 }
