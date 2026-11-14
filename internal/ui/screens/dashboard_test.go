@@ -42,7 +42,7 @@ func TestDashboardRendersCollectedData(t *testing.T) {
 		snapshot: core.ServerSnapshot{
 			Hostname: "buildbox",
 			Kernel:   core.KernelInfo{Release: "6.11.5-arch1-1", HardwareModel: "PowerEdge R240"},
-			CPU:      core.CPUInfo{Model: "Test CPU", Cores: 4, Usage: 50, PerCPU: []float64{50, 50, 50, 50}},
+			CPU:      core.CPUInfo{Model: "Test CPU", Cores: 4, Usage: 50, PerCPU: []float64{50, 50, 50, 50}, Measured: true},
 			Memory:   core.MemoryInfo{Total: 16 << 30, Used: 8 << 30, Available: 8 << 30},
 			Load:     core.LoadAvg{Load1: 0.42, Load5: 0.36, Load15: 0.30},
 			Uptime:   3*24*time.Hour + 4*time.Hour,
@@ -101,7 +101,7 @@ func dashboardRound() dashboardDataMsg {
 		snapshot: core.ServerSnapshot{
 			Hostname: "buildbox",
 			Kernel:   core.KernelInfo{Release: "6.11.5-arch1-1", HardwareModel: "PowerEdge R240"},
-			CPU:      core.CPUInfo{Model: "Test CPU", Cores: 4, Usage: 50, PerCPU: []float64{50, 50, 50, 50}},
+			CPU:      core.CPUInfo{Model: "Test CPU", Cores: 4, Usage: 50, PerCPU: []float64{50, 50, 50, 50}, Measured: true},
 			Memory:   core.MemoryInfo{Total: 16 << 30, Used: 8 << 30, Available: 8 << 30},
 			Load:     core.LoadAvg{Load1: 0.42, Load5: 0.36, Load15: 0.30},
 			Uptime:   3 * 24 * time.Hour,
@@ -193,6 +193,202 @@ func TestDashboardFirstRoundFailureHasNoStaleNote(t *testing.T) {
 	}
 	if strings.Contains(view, "stale") {
 		t.Errorf("a section with no last good round must not claim a stale age:\n%s", view)
+	}
+}
+
+// TestDashboardLoadInlinesWindowsAndNormalizesByCores pins the Load
+// section read-A contract: each window label travels with its value so
+// no column alignment is implied, the core count sits next to the
+// numbers, and the bar normalizes the 1m average against total core
+// capacity (0.42 on 2 cores is 21%).
+func TestDashboardLoadInlinesWindowsAndNormalizesByCores(t *testing.T) {
+	round := dashboardRound()
+	round.snapshot.CPU.Cores = 2
+	round.snapshot.CPU.PerCPU = []float64{50, 50}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(100, 40)
+
+	for _, want := range []string{"2 cores", "· 1m 0.42  5m 0.36  15m 0.30", "21% (1m)"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("load section is missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Load  1m 5m 15m") {
+		t.Errorf("load must not render the detached window legend:\n%s", view)
+	}
+}
+
+// TestDashboardLoadWithoutCoresFallsBackToPlainWindows pins the
+// degraded case: when the CPU section never reported a core count, the
+// load section still shows its values but skips the capacity bar
+// instead of dividing by zero.
+func TestDashboardLoadWithoutCoresFallsBackToPlainWindows(t *testing.T) {
+	round := dashboardRound()
+	round.snapshot.CPU = core.CPUInfo{}
+	round.errs = map[string]error{"cpu": errors.New("boom")}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(100, 40)
+
+	if !strings.Contains(view, "· 1m 0.42  5m 0.36  15m 0.30") {
+		t.Errorf("load must keep inline windows without a core count:\n%s", view)
+	}
+	if strings.Contains(view, "% (1m)") {
+		t.Errorf("load must not render a capacity readout without cores:\n%s", view)
+	}
+}
+
+// TestDashboardCPUMeasuresBeforeBaseline pins the first-round honesty
+// fix: the tracker can only baseline cumulative counters, so the first
+// round renders a measuring note instead of a fake 0.0%.
+func TestDashboardCPUMeasuresBeforeBaseline(t *testing.T) {
+	// Keep the other sections healthy so the only possible "0.0%" is the
+	// CPU's unmeasured baseline, not an empty memory fixture.
+	round := dashboardRound()
+	round.snapshot.CPU = core.CPUInfo{Model: "Test CPU", Cores: 4, PerCPU: []float64{0, 0, 0, 0}}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+
+	view := screen.View(100, 40)
+	if !strings.Contains(view, "measuring") {
+		t.Errorf("first round must render the measuring note:\n%s", view)
+	}
+	if strings.Contains(view, " 0.0%") {
+		t.Errorf("first round must not render a fake 0.0%%:\n%s", view)
+	}
+}
+
+// TestDashboardCPURendersBarsPerCoreUpToEightCores pins the small-count
+// mode: the aggregate and every core share one aligned table, so bars
+// and percentages sit in the same columns and indices read as row labels.
+func TestDashboardCPURendersBarsPerCoreUpToEightCores(t *testing.T) {
+	round := dashboardRound()
+	round.snapshot.CPU = core.CPUInfo{
+		Model:    "Test CPU",
+		Cores:    4,
+		Usage:    62.4,
+		PerCPU:   []float64{42, 87, 3, 51},
+		Measured: true,
+	}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(100, 40)
+
+	for _, want := range []string{
+		"total  █████████████████░░░░░░░░░░░",
+		"    0  ███████████░░░░░░░░░░░░░░░░",
+		"    1  ████████████████████████░░░░",
+		"    2  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
+		"  42.0%", "  87.0%", "   3.0%", "  51.0%",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("per-core table is missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "0-3") {
+		t.Errorf("small-count mode must not render a heatmap index label:\n%s", view)
+	}
+	if !strings.Contains(view, "62.4%\n\n    0  ") {
+		t.Errorf("the total row must be separated from the core rows:\n%s", view)
+	}
+}
+
+// TestDashboardCPUUsesHeatmapAboveEightCores pins the scalable mode: one
+// colored level per core and an index range instead of per-core rows.
+func TestDashboardCPUUsesHeatmapAboveEightCores(t *testing.T) {
+	round := dashboardRound()
+	round.snapshot.CPU = core.CPUInfo{
+		Model:    "Test CPU",
+		Cores:    9,
+		Usage:    54,
+		PerCPU:   []float64{0, 100, 50, 25, 75, 90, 10, 60, 80},
+		Measured: true,
+	}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(100, 40)
+
+	if !strings.Contains(view, "0-8") {
+		t.Errorf("heatmap must label its core range:\n%s", view)
+	}
+	if !strings.Contains(view, "▁") {
+		t.Errorf("an idle core must render the lowest heat level:\n%s", view)
+	}
+	if strings.Contains(view, "0 █") {
+		t.Errorf("many-core mode must not render per-core bar rows:\n%s", view)
+	}
+}
+
+// TestDashboardCPUHeatmapWrapsAtNarrowWidth pins the wrap: 32 cores at
+// 30 cells split into two labeled rows instead of clipping.
+func TestDashboardCPUHeatmapWrapsAtNarrowWidth(t *testing.T) {
+	per := make([]float64, 32)
+	for i := range per {
+		per[i] = float64(i * 3)
+	}
+	round := dashboardRound()
+	round.snapshot.CPU = core.CPUInfo{Model: "Test CPU", Cores: 32, Usage: 40, PerCPU: per, Measured: true}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(30, 40)
+
+	for _, want := range []string{"0-22", "23-31"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("wrapped heatmap is missing row label %q:\n%s", want, view)
+		}
+	}
+}
+
+// TestDashboardMemoryAlignsSwapRows pins the memory read-A: memory and
+// swap share one label gutter, one bar width, one percentage column and
+// one right-aligned used/total column, so swap gets the same visual
+// treatment as memory instead of a muted footnote.
+func TestDashboardMemoryAlignsSwapRows(t *testing.T) {
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(dashboardDataMsg{
+		snapshot: core.ServerSnapshot{
+			Memory: core.MemoryInfo{
+				Total:     16 << 30,
+				Used:      8 << 30,
+				Available: 8 << 30,
+				SwapTotal: 4 << 30,
+				SwapUsed:  1 << 30,
+			},
+		},
+		errs: map[string]error{},
+	})
+
+	view := screen.View(100, 40)
+	for _, want := range []string{
+		"Memory  ██████████████░░░░░░░░░░░░░░",
+		"swap    ███████░░░░░░░░░░░░░░░░░░░",
+		"  50.0%",
+		"  25.0%",
+		"8.0 GiB / 16.0 GiB",
+		"1.0 GiB / 4.0 GiB",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("memory section is missing %q:\n%s", want, view)
+		}
+	}
+}
+
+// TestDashboardMemoryOmitsSwapRowWithoutSwap pins the no-swap case: the
+// section must not render an empty swap row when the host has none.
+func TestDashboardMemoryOmitsSwapRowWithoutSwap(t *testing.T) {
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(dashboardRound())
+	view := screen.View(100, 40)
+
+	if strings.Contains(view, "swap") {
+		t.Errorf("a host without swap must not render a swap row:\n%s", view)
 	}
 }
 
