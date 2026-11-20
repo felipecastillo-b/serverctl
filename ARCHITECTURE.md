@@ -89,6 +89,7 @@ type CPUInfo struct {
     Cores  int
     Usage  float64   // aggregate percent
     PerCPU []float64
+    Measured bool    // false on the first round, before a baseline sample
 }
 type MemoryInfo struct {
     Total, Used, Available uint64
@@ -168,7 +169,7 @@ type ContainerList struct {
 - The whole UI is one Bubble Tea root model; everything asynchronous arrives as a typed `tea.Msg`.
 - Each module collects via a `tea.Cmd` with a per-module ticker (configurable interval); collection is async and cancellable on screen switch or quit — the UI never blocks on I/O.
 - Results arrive as typed messages (e.g., `ProcessesUpdatedMsg`, `ActionResultMsg`) routed by the root model to the owning screen.
-- Panels render explicit loading, error and stale states: the muted loading state covers a first round, and a failed round keeps the last good data on screen while the panel's status note carries the round error plus the age of that data (`stale 45s`), clearing both on the next good round; a failed collection degrades one panel, never the program.
+- Panels render explicit loading, error and stale states: the muted loading state covers a first round, the CPU panel says `measuring…` until its second sample supplies a baseline, and a failed round keeps the last good data on screen while the panel's status note carries the round error plus the age of that data (`stale 45s`), clearing both on the next good round; a failed collection degrades one panel, never the program.
 
 ## 6. Navigation & input
 

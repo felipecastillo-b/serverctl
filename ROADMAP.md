@@ -1,14 +1,14 @@
 # serverctl Roadmap
 
-**Current release: [v0.6.1](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.1) (2026-11-02).**
+**Current release: [v0.7.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.7.0) (2026-11-20).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
 added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
 delivered M10 portability; v0.4.0 delivered M11 containers; v0.5.0 shipped the
 M12 SMART slice, and v0.5.1 removed it because SMART reads require root or
 `CAP_SYS_RAWIO` and the project does not escalate or require extra system
 configuration; v0.6.0 delivered M13 UX depth; v0.6.1 fixed table column
-separation. This document covers what is
-delivered, how work flows, the live bug queue, and the proposed milestones
+separation; v0.7.0 improved dashboard readability. This document covers what
+is delivered, how work flows, the live bug queue, and the proposed milestones
 ahead. Everything under "Proposed milestones" is a proposal — the maintainer
 prunes, splits, or reorders.
 
@@ -23,8 +23,8 @@ prunes, splits, or reorders.
 
 ### Release policy (0.x)
 
-- Bug-fix-only batches tag patch releases: `v0.6.2`, `v0.6.3`, ...
-- The first new feature or visible change bumps MINOR: `v0.7.0`.
+- Bug-fix-only batches tag patch releases: `v0.7.1`, `v0.7.2`, ...
+- The first new feature or visible change bumps MINOR: `v0.8.0`.
 - Docs-only changes ride along with the next release and do not need a tag.
 - Tags are annotated (`serverctl vX.Y.Z — summary`); the release workflow
   publishes automatically on tag push.
@@ -90,6 +90,11 @@ audit trail, and `screen_keys` per-screen action bindings
 stacked PRs #64–#77). **v0.6.1** — table columns gained a one-cell gutter so a
 value that fills its column no longer touches the next one
 ([#80](https://github.com/felipecastillo-b/serverctl/issues/80)).
+**v0.7.0** — dashboard readability: load averages normalized against core
+capacity, per-core CPU as aligned bars (up to eight cores) or a heatmap,
+aligned memory/swap rows with percentages, and sensor names grouped with
+color-coded temperatures
+([#84](https://github.com/felipecastillo-b/serverctl/pull/84)).
 
 ### Released versions
 
@@ -104,6 +109,7 @@ value that fills its column no longer touches the next one
 | [`v0.5.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.5.1) | 2026-11-02 | Removed the SMART disk-health module: requires root/CAP_SYS_RAWIO |
 | [`v0.6.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.0) | 2026-11-02 | M13: screen stack/detail views, mouse parity, root-confirmed palette actions, screen keys |
 | [`v0.6.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.1) | 2026-11-02 | Fixed table column separation: one-cell gutter between every column |
+| [`v0.7.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.7.0) | 2026-11-20 | Dashboard readability: normalized load, per-core CPU table/heatmap, aligned memory/swap, grouped sensor temperatures |
 
 ### Shipped modules
 

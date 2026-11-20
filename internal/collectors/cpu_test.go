@@ -87,14 +87,20 @@ func TestCPUTrackerBaselineThenPercent(t *testing.T) {
 	second := collectors.CPUSample{User: 1100, System: 500, Idle: 8100, IOWait: 200, SoftIRQ: 100}
 
 	// First refresh establishes the baseline: no meaningful usage exists yet.
-	usage, per := tracker.Refresh(first, []collectors.CPUSample{first})
+	usage, per, measured := tracker.Refresh(first, []collectors.CPUSample{first})
 	if usage != 0 || len(per) != 1 || per[0] != 0 {
 		t.Fatalf("baseline refresh = %v %v, want zeros", usage, per)
 	}
+	if measured {
+		t.Fatal("baseline refresh must report measured=false")
+	}
 
-	usage, _ = tracker.Refresh(second, []collectors.CPUSample{second})
+	usage, _, measured = tracker.Refresh(second, []collectors.CPUSample{second})
 	if usage != 50 {
 		t.Errorf("second refresh = %v, want 50", usage)
+	}
+	if !measured {
+		t.Error("second refresh must report measured=true")
 	}
 }
 

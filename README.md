@@ -15,13 +15,15 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 
 ## Status
 
-> **v0.6.1 is released — milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed
+> **v0.7.0 is released — milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed
 > sensor detection; v0.2.1 hardened the release pipeline and UI; v0.3.0 added
 > portability; v0.4.0 added containers; v0.5.0 shipped SMART disk health and
 > v0.5.1 removed it because SMART reads require root or `CAP_SYS_RAWIO`;
 > v0.6.0 delivered UX depth: screen stack and detail views, root-confirmed
 > palette actions with audit, full mouse parity, and configurable screen keys;
-> v0.6.1 fixed table column separation.**
+> v0.6.1 fixed table column separation; v0.7.0 improved dashboard readability:
+> load normalized against cores, per-core CPU tables and heatmaps, aligned
+> memory/swap rows, and grouped color-coded sensors.**
 > The binary launches the full TUI: dashboard, processes, services and journal
 > logs, storage, network, packages, access audit, and containers, with a
 > command palette, screen stack and detail views, keyboard and mouse control,
@@ -45,7 +47,7 @@ every mutating action whitelisted and gated behind a confirmation prompt.
 - Users and login sessions (logind D-Bus, utmp fallback)
 - SSH login attempt audit (journal, auth log and wtmp fallbacks)
 - Containers: Docker and Podman listings from the local socket, with state, image and uptime
-- Hardware sensors via hwmon, ordered by dashboard usefulness
+- Hardware sensors via hwmon: grouped by chip, aligned, color-coded by temperature, and ordered by dashboard usefulness
 
 ## Requirements
 

@@ -37,6 +37,10 @@ type CPUInfo struct {
 	Cores  int
 	Usage  float64
 	PerCPU []float64
+	// Measured is false on the first collection round: the tracker can
+	// only baseline cumulative /proc/stat counters, so the zero usage
+	// of that round is "not measured yet", not an idle CPU.
+	Measured bool
 }
 
 // MemoryInfo reports RAM and swap occupation in bytes.

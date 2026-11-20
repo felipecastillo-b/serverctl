@@ -115,11 +115,12 @@ type CPUTracker struct {
 }
 
 // Refresh consumes one sample pair. The very first call can only establish
-// the baseline, so it reports 0% and no error — by design, not by failure.
-func (t *CPUTracker) Refresh(aggregate CPUSample, perCPU []CPUSample) (usage float64, per []float64) {
+// the baseline, so it reports 0% and measured=false — by design, not by
+// failure. Later calls diff against the stored baseline and report true.
+func (t *CPUTracker) Refresh(aggregate CPUSample, perCPU []CPUSample) (usage float64, per []float64, measured bool) {
 	if !t.started {
 		t.prev, t.prevPer, t.started = aggregate, perCPU, true
-		return 0, make([]float64, len(perCPU))
+		return 0, make([]float64, len(perCPU)), false
 	}
 	usage = UsagePercent(t.prev, aggregate)
 	per = make([]float64, len(perCPU))
@@ -129,7 +130,7 @@ func (t *CPUTracker) Refresh(aggregate CPUSample, perCPU []CPUSample) (usage flo
 		}
 	}
 	t.prev, t.prevPer = aggregate, perCPU
-	return usage, per
+	return usage, per, true
 }
 
 // CPUModel returns the processor model name from /proc/cpuinfo. On
