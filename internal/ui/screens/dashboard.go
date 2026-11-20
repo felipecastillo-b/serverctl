@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -181,7 +182,7 @@ func (d *dashboard) View(width, height int) string {
 	lines = append(lines, "")
 	lines = append(lines, d.loadBlock(label, muted, danger, width)...)
 	lines = append(lines, "")
-	lines = append(lines, d.sensorsBlock(label, muted, danger)...)
+	lines = append(lines, d.sensorsBlock(label, muted, danger, width)...)
 
 	for i, line := range lines {
 		if width > 0 && lipgloss.Width(line) > width {
@@ -446,7 +447,7 @@ func (d *dashboard) loadBlock(label, muted, danger lipgloss.Style, width int) []
 	}
 }
 
-func (d *dashboard) sensorsBlock(label, muted, danger lipgloss.Style) []string {
+func (d *dashboard) sensorsBlock(label, muted, danger lipgloss.Style, width int) []string {
 	note, showValues := d.sectionNote("sensors", muted, danger)
 	if !showValues {
 		return []string{label.Render("Sensors"), note}
@@ -459,14 +460,100 @@ func (d *dashboard) sensorsBlock(label, muted, danger lipgloss.Style) []string {
 		return []string{empty, muted.Render("no sensors detected")}
 	}
 	head := label.Render("Sensors")
+	if len(d.sensors) > 1 {
+		max := maxTemperature(d.sensors)
+		head += muted.Render("  max ") +
+			lipgloss.NewStyle().Foreground(temperatureColor(max, d.theme)).Render(fmt.Sprintf("%.0f°C", max))
+	}
 	if note != "" {
 		head += " " + note
 	}
-	lines := []string{head}
-	for _, s := range d.sensors {
-		lines = append(lines, fmt.Sprintf("%s %s  %.0f°C", s.Name, s.Label, s.Celsius))
+	return append([]string{head}, sensorRows(d.sensors, width, muted, d.theme)...)
+}
+
+// maxTemperature returns the hottest reading of a non-empty slice.
+func maxTemperature(sensors []core.SensorReading) float64 {
+	max := sensors[0].Celsius
+	for _, s := range sensors[1:] {
+		if s.Celsius > max {
+			max = s.Celsius
+		}
 	}
-	return lines
+	return max
+}
+
+// sensorRows renders one aligned row per sensor: the chip name only when
+// it changes, the label in a fixed column, and the temperature
+// right-aligned in its own column and colored by threshold.
+func sensorRows(sensors []core.SensorReading, width int, muted lipgloss.Style, th theme.Theme) []string {
+	nameW, labelW := sensorColumns(sensors, width)
+	rows := make([]string, 0, len(sensors))
+	lastName := ""
+	for _, s := range sensors {
+		name := ""
+		if s.Name != lastName {
+			name = clipRunes(s.Name, nameW)
+			lastName = s.Name
+		}
+		label := clipRunes(s.Label, labelW)
+		temp := lipgloss.NewStyle().
+			Foreground(temperatureColor(s.Celsius, th)).
+			Render(fmt.Sprintf("%3.0f°C", s.Celsius))
+		rows = append(rows, muted.Render(fmt.Sprintf("%-*s", nameW, name))+
+			"  "+fmt.Sprintf("%-*s", labelW, label)+"  "+temp)
+	}
+	return rows
+}
+
+// sensorColumns sizes the name and label columns for the current pane,
+// shrinking the label first and then the name so the temperature cell
+// always survives.
+func sensorColumns(sensors []core.SensorReading, width int) (nameW, labelW int) {
+	for _, s := range sensors {
+		if w := utf8.RuneCountInString(s.Name); w > nameW {
+			nameW = w
+		}
+		if w := utf8.RuneCountInString(s.Label); w > labelW {
+			labelW = w
+		}
+	}
+	if nameW == 0 {
+		nameW = 1
+	}
+	if labelW == 0 {
+		labelW = 1
+	}
+	if width <= 0 {
+		return nameW, labelW
+	}
+	// Two column gaps plus the widest temperature cell ("100°C").
+	avail := width - 4 - 5
+	if avail < 2 {
+		avail = 2
+	}
+	for nameW+labelW > avail {
+		if labelW > 3 {
+			labelW--
+		} else if nameW > 3 {
+			nameW--
+		} else {
+			break
+		}
+	}
+	return nameW, labelW
+}
+
+// temperatureColor maps a reading to the theme roles: 70°C warns and
+// 85°C is dangerous. CPU, GPU and NVMe chips throttle at different
+// points, so these are advisory dashboard heuristics, not limits.
+func temperatureColor(celsius float64, th theme.Theme) lipgloss.Color {
+	if celsius >= 85 {
+		return th.Danger
+	}
+	if celsius >= 70 {
+		return th.Warning
+	}
+	return th.Success
 }
 
 // barWidth keeps bars compact but usable: never wider than 28 cells, and

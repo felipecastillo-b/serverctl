@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
 	"github.com/felipecastillo-b/serverctl/internal/core"
 	"github.com/felipecastillo-b/serverctl/internal/ui/theme"
@@ -389,6 +391,103 @@ func TestDashboardMemoryOmitsSwapRowWithoutSwap(t *testing.T) {
 
 	if strings.Contains(view, "swap") {
 		t.Errorf("a host without swap must not render a swap row:\n%s", view)
+	}
+}
+
+// TestDashboardSensorsGroupAndAlignRows pins the sensor read: the chip
+// name appears once per contiguous run, labels and temperatures share
+// columns, and the header carries the hottest reading.
+func TestDashboardSensorsGroupAndAlignRows(t *testing.T) {
+	round := dashboardRound()
+	round.sensors = []core.SensorReading{
+		{Name: "coretemp", Label: "Package id 0", Celsius: 54},
+		{Name: "coretemp", Label: "Core 0", Celsius: 54},
+		{Name: "coretemp", Label: "Core 1", Celsius: 52},
+		{Name: "nvme", Label: "Composite", Celsius: 86},
+	}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(100, 40)
+
+	if !strings.Contains(view, "Sensors  max 86°C") {
+		t.Errorf("sensor header is missing the max reading:\n%s", view)
+	}
+	if got := strings.Count(view, "coretemp"); got != 1 {
+		t.Errorf("chip name must render once per contiguous run, got %d occurrences:\n%s", got, view)
+	}
+
+	var pkgLine, coreLine, nvmeLine string
+	for _, line := range strings.Split(view, "\n") {
+		switch {
+		case strings.Contains(line, "Package id 0"):
+			pkgLine = line
+		case strings.Contains(line, "Core 0"):
+			coreLine = line
+		case strings.Contains(line, "Composite"):
+			nvmeLine = line
+		}
+	}
+	if pkgLine == "" || coreLine == "" || nvmeLine == "" {
+		t.Fatalf("sensor rows are missing:\n%s", view)
+	}
+	if strings.Contains(coreLine, "coretemp") {
+		t.Errorf("repeated chip name must be blank, got %q", coreLine)
+	}
+	pkgTemp := strings.Index(pkgLine, "54°C")
+	coreTemp := strings.Index(coreLine, "54°C")
+	nvmeTemp := strings.Index(nvmeLine, "86°C")
+	if pkgTemp < 0 || coreTemp < 0 || nvmeTemp < 0 {
+		t.Fatalf("temperature column is missing:\n%s", view)
+	}
+	if pkgTemp != coreTemp || coreTemp != nvmeTemp {
+		t.Errorf("temperatures must share one column: %q / %q / %q", pkgLine, coreLine, nvmeLine)
+	}
+}
+
+// TestTemperatureColorThresholds pins the advisory temperature roles.
+func TestTemperatureColorThresholds(t *testing.T) {
+	th := theme.Dark()
+	cases := []struct {
+		celsius float64
+		want    lipgloss.Color
+	}{
+		{69.9, th.Success},
+		{70, th.Warning},
+		{84.9, th.Warning},
+		{85, th.Danger},
+	}
+	for _, tc := range cases {
+		if got := temperatureColor(tc.celsius, th); got != tc.want {
+			t.Errorf("temperatureColor(%v) = %v, want %v", tc.celsius, got, tc.want)
+		}
+	}
+}
+
+// TestDashboardSensorsClipColumnsAtNarrowWidth pins the narrow-pane
+// fallback: long names/labels shrink so the temperature stays visible.
+func TestDashboardSensorsClipColumnsAtNarrowWidth(t *testing.T) {
+	round := dashboardRound()
+	round.sensors = []core.SensorReading{
+		{Name: "verylongchipname", Label: "Very long sensor label", Celsius: 55},
+	}
+
+	screen := NewDashboard(collectors.New("/nonexistent-fixtures"), theme.Dark())
+	screen, _ = screen.Update(round)
+	view := screen.View(20, 40)
+
+	var tempLine string
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "55°C") {
+			tempLine = line
+			break
+		}
+	}
+	if tempLine == "" {
+		t.Fatalf("temperature clipped out at width 20:\n%s", view)
+	}
+	if w := lipgloss.Width(tempLine); w > 20 {
+		t.Errorf("sensor line width = %d, want <= 20: %q", w, tempLine)
 	}
 }
 
