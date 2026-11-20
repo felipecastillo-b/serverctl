@@ -93,7 +93,8 @@ value that fills its column no longer touches the next one
 **v0.7.0** — dashboard readability: load averages normalized against core
 capacity, per-core CPU as aligned bars (up to eight cores) or a heatmap,
 aligned memory/swap rows with percentages, and sensor names grouped with
-color-coded temperatures.
+color-coded temperatures
+([#84](https://github.com/felipecastillo-b/serverctl/pull/84)).
 
 ### Released versions
 
