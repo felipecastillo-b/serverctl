@@ -100,7 +100,9 @@ color-coded temperatures
 ([#84](https://github.com/felipecastillo-b/serverctl/pull/84)).
 **v0.8.0** — processes readability: a pane-wide table with aligned numeric
 columns, empty-filter states, sort changes that land on the first row, and
-one-row-per-notch mouse-wheel navigation.
+one-row-per-notch mouse-wheel navigation
+([#85](https://github.com/felipecastillo-b/serverctl/issues/85),
+[#86](https://github.com/felipecastillo-b/serverctl/pull/86)).
 
 ### Released versions
 
