@@ -362,9 +362,16 @@ func (p *processes) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return p, nil, true
 }
 
-// UpdateMouse routes presses to the open confirmation modal, else a left
-// press selects the clicked table row: the exact parity of the up/down
-// keys. Clicks outside the table fall through to the shell.
+// processWheelStep is how many rows one wheel notch moves: one, the same
+// step the arrow keys use, so the wheel walks the list process by process.
+const processWheelStep = 1
+
+// UpdateMouse routes presses to the open confirmation modal, then handles
+// the wheel and left clicks on the table. The wheel moves the selection by
+// processWheelStep rows, clamped at both ends, exactly the navigation the
+// arrow keys offer; a left press selects the clicked row. Clicks outside
+// the table and events over the sidebar or header fall through to the
+// shell. An open modal swallows every event.
 func (p *processes) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	if p.modalOpen {
 		p.modal.UpdateMouse(msg)
@@ -372,10 +379,33 @@ func (p *processes) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	}
 
 	event := tea.MouseEvent(msg)
-	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
+	// The shell subtracts the sidebar width and the header row before
+	// delivery, so events over them carry negative coordinates.
+	if event.X < 0 || event.Y < 0 {
+		return p, nil, false
+	}
+	if event.Action != tea.MouseActionPress {
 		return p, nil, false
 	}
 	if p.lastWidth <= 0 {
+		return p, nil, false
+	}
+	switch event.Button {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		// The table owns the header plus its viewport rows; the filter
+		// and status lines below it (and the shell footer past the
+		// pane) keep their own rows, so a wheel there falls through.
+		if event.Y > p.table.Height() {
+			return p, nil, false
+		}
+		if event.Button == tea.MouseButtonWheelUp {
+			p.scrollRows(-processWheelStep)
+		} else {
+			p.scrollRows(processWheelStep)
+		}
+		return p, nil, true
+	}
+	if event.Button != tea.MouseButtonLeft {
 		return p, nil, false
 	}
 	row, ok := tableRowAt(p.table, columnsFor(p.lastWidth), event.X, event.Y)
@@ -391,6 +421,19 @@ func (p *processes) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 		p.table.MoveUp(-delta)
 	}
 	return p, nil, true
+}
+
+// scrollRows moves the selection by delta rows (positive down), clamped by
+// the table widget. An empty listing ignores the move.
+func (p *processes) scrollRows(delta int) {
+	if len(p.view) == 0 {
+		return
+	}
+	if delta > 0 {
+		p.table.MoveDown(delta)
+	} else {
+		p.table.MoveUp(-delta)
+	}
 }
 
 // requestSignal opens the §7 confirmation modal for sig on the selected

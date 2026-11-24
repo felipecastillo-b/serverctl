@@ -537,6 +537,112 @@ func TestProcessesMouseConfirmsModal(t *testing.T) {
 	}
 }
 
+// TestProcessesWheelMovesSelection pins the wheel contract: one notch
+// moves the selection one row, exactly the arrow-key step, clamped at both
+// ends. Wheel events over the sidebar fall through to the shell, and an
+// open confirmation modal keeps swallowing every event.
+func TestProcessesWheelMovesSelection(t *testing.T) {
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), &fakeSender{}, nil)
+	p.procs = make([]core.Process, 10)
+	for i := range p.procs {
+		p.procs[i] = core.Process{PID: 100 + i, Name: fmt.Sprintf("proc-%02d", i)}
+	}
+	p.loaded = true
+	p.lastGood = time.Now()
+	p.reapply()
+	p.View(100, 24)
+
+	cases := []struct {
+		name   string
+		button tea.MouseButton
+		want   int
+	}{
+		{"wheel down steps one row", tea.MouseButtonWheelDown, 1},
+		{"second notch steps one more", tea.MouseButtonWheelDown, 2},
+		{"wheel up steps back one", tea.MouseButtonWheelUp, 1},
+	}
+	for _, tc := range cases {
+		updated, cmd, handled := p.UpdateMouse(mousePress(tc.button, 2, 2))
+		p = updated.(*processes)
+		if !handled || cmd != nil {
+			t.Fatalf("%s: handled=%v cmd=%v, want claimed without a command", tc.name, handled, cmd)
+		}
+		if p.table.Cursor() != tc.want {
+			t.Errorf("%s: cursor = %d, want %d", tc.name, p.table.Cursor(), tc.want)
+		}
+	}
+
+	// Both ends clamp instead of wrapping or overflowing.
+	p.table.SetCursor(len(p.view) - 1)
+	updated, _, _ := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	p = updated.(*processes)
+	if got, want := p.table.Cursor(), len(p.view)-1; got != want {
+		t.Errorf("wheel down at the end: cursor = %d, want %d", got, want)
+	}
+	p.table.SetCursor(0)
+	updated, _, _ = p.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+	p = updated.(*processes)
+	if p.table.Cursor() != 0 {
+		t.Errorf("wheel up at the start: cursor = %d, want 0", p.table.Cursor())
+	}
+
+	// Over the sidebar the shell owns the event: local X is negative.
+	if _, _, handled := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, -1, 2)); handled {
+		t.Error("wheel over the sidebar must fall through to the shell")
+	}
+	// The filter/status lines below the table and the shell footer past
+	// the pane keep their own rows.
+	for _, y := range []int{23, 24} {
+		if _, _, handled := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, y)); handled {
+			t.Errorf("wheel over row %d (outside the table) must fall through", y)
+		}
+	}
+
+	// An open confirmation modal is exclusive and swallows the wheel.
+	if _, _, handled := p.UpdateKey(keyMsg("k")); !handled || !p.modalOpen {
+		t.Fatal("k must open the KILL confirmation")
+	}
+	cursor := p.table.Cursor()
+	updated, cmd, handled := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	p = updated.(*processes)
+	if !handled || !p.modalOpen || cmd != nil || p.table.Cursor() != cursor {
+		t.Errorf("modal must swallow the wheel: handled=%v open=%v cmd=%v cursor=%d want %d",
+			handled, p.modalOpen, cmd, p.table.Cursor(), cursor)
+	}
+}
+
+// TestProcessesWheelKeepsSelectionVisible pins the viewport half of the
+// wheel contract: after every notch, down to the last process and back to
+// the first, the selected row is still rendered inside the visible table.
+func TestProcessesWheelKeepsSelectionVisible(t *testing.T) {
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), &fakeSender{}, nil)
+	p.procs = make([]core.Process, 60)
+	for i := range p.procs {
+		p.procs[i] = core.Process{PID: 100 + i, Name: fmt.Sprintf("proc-%02d", i)}
+	}
+	p.loaded = true
+	p.lastGood = time.Now()
+	p.reapply()
+	p.View(80, 14)
+
+	checkVisible := func(dir string, step int) {
+		out := p.View(80, 14)
+		name := p.view[p.table.Cursor()].Name
+		if !strings.Contains(out, name) {
+			t.Fatalf("%s step %d: cursor on %s (row %d) is not visible:\n%s",
+				dir, step, name, p.table.Cursor(), out)
+		}
+	}
+	for i := 0; i < 30; i++ {
+		p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+		checkVisible("down", i)
+	}
+	for i := 0; i < 30; i++ {
+		p.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+		checkVisible("up", i)
+	}
+}
+
 func TestProcessesClickSelectsRow(t *testing.T) {
 	p, _ := newFixtureScreen(t)
 	p.View(100, 24)
