@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/felipecastillo-b/serverctl/internal/actions"
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
@@ -487,5 +489,161 @@ func TestProcessesStaleRoundAgesListing(t *testing.T) {
 	out = p.View(100, 24)
 	if strings.Contains(out, "stale") || strings.Contains(out, "/proc vanished") {
 		t.Errorf("a recovered round must clear the error and the age:\n%s", out)
+	}
+}
+
+// TestProcessesColumnsFillPaneWidth pins the table's layout contract: the
+// column widths plus the one-cell gutter every cell carries add up to the
+// pane width, so the header and the selected-row bar reach the right edge
+// instead of stopping several cells short of it.
+func TestProcessesColumnsFillPaneWidth(t *testing.T) {
+	for _, width := range []int{46, 51, 52, 53, 60, 80, 100, 120, 200} {
+		cols := columnsFor(width)
+		total := 0
+		for _, col := range cols {
+			if col.Width < 1 {
+				t.Fatalf("width %d: column %q has non-positive width %d", width, col.Title, col.Width)
+			}
+			total += col.Width + 1 // table.Styles.Cell pads every cell right by one.
+		}
+		if total != width {
+			t.Errorf("width %d: columns plus gutter = %d, want the pane width", width, total)
+		}
+	}
+
+	p, _ := newFixtureScreen(t)
+	for _, width := range []int{46, 51, 52, 53, 100} {
+		header := strings.Split(p.View(width, 24), "\n")[0]
+		if got := lipgloss.Width(header); got != width {
+			t.Errorf("width %d: header line width = %d:\n%q", width, got, header)
+		}
+	}
+}
+
+// TestProcessesNumericColumnsAlignRight pins the right-alignment of the
+// three numeric columns, headers included: magnitudes compare by digit
+// position instead of by a ragged left edge.
+func TestProcessesNumericColumnsAlignRight(t *testing.T) {
+	cols := columnsFor(100)
+	wantTitles := map[int]string{
+		0: "  CPU%",
+		1: "       MEM",
+		4: "    PID",
+	}
+	for idx, want := range wantTitles {
+		if cols[idx].Title != want {
+			t.Errorf("column %d title = %q, want %q", idx, cols[idx].Title, want)
+		}
+	}
+
+	rows := rowsFor([]core.Process{
+		{PID: 7, Name: "small", CpuPct: 9.9, RSS: 5 * 1024 * 1024},
+		{PID: 1234567, Name: "big", CpuPct: 99.9, RSS: 900 * 1024 * 1024},
+	}, 100)
+	want := [][3]string{
+		{"   9.9", "   5.0 MiB", "      7"},
+		{"  99.9", " 900.0 MiB", "1234567"},
+	}
+	cellIndexes := [3]int{0, 1, 4}
+	for i, row := range rows {
+		for j, cell := range cellIndexes {
+			if row[cell] != want[i][j] {
+				t.Errorf("row %d cell %d = %q, want %q", i, cell, row[cell], want[i][j])
+			}
+			if got, width := len(row[cell]), cols[cell].Width; got != width {
+				t.Errorf("row %d cell %d width = %d, want %d", i, cell, got, width)
+			}
+		}
+	}
+}
+
+// TestProcessesMemColumnNeverClipsTheUnit pins the MEM column width: with
+// the old eight cells, values over 999 MiB lost their unit to an ellipsis.
+func TestProcessesMemColumnNeverClipsTheUnit(t *testing.T) {
+	rows := rowsFor([]core.Process{{RSS: 650 * 1024 * 1024}}, 100)
+	mem := strings.TrimSpace(rows[0][1])
+	if !strings.HasSuffix(mem, "MiB") || strings.Contains(mem, "…") {
+		t.Errorf("MEM cell = %q, want the full value and unit", rows[0][1])
+	}
+}
+
+// TestClipKeepsRunesAndCellWidth pins the shared clip helper: it must cut
+// by display cells, never mid-rune, because the table's mouse hit-test
+// matches its rendered rows against the same pre-clipped values.
+func TestClipKeepsRunesAndCellWidth(t *testing.T) {
+	cases := []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"short", 10, "short"},
+		{"aña", 3, "aña"},    // bytes exceed the width, cells do not
+		{"añabc", 4, "aña…"}, // cut keeps both runes whole
+		{"日本語", 4, "日…"},     // wide runes count two cells each
+	}
+	for _, tc := range cases {
+		got := clip(tc.in, tc.width)
+		if got != tc.want {
+			t.Errorf("clip(%q, %d) = %q, want %q", tc.in, tc.width, got, tc.want)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("clip(%q, %d) split a rune: %q", tc.in, tc.width, got)
+		}
+		if w := lipgloss.Width(got); w > tc.width {
+			t.Errorf("clip(%q, %d) = %q is %d cells wide", tc.in, tc.width, got, w)
+		}
+	}
+}
+
+// TestClipASCIIMatchesLegacySlice pins the shared helper's compatibility:
+// for ASCII, the width-aware clip must equal the old byte slice the other
+// table screens were built against, so their rendering stays untouched.
+func TestClipASCIIMatchesLegacySlice(t *testing.T) {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /._-:[]()"
+	for n := 1; n <= 30; n++ {
+		for length := n + 1; length <= n+20; length++ {
+			var b strings.Builder
+			for i := 0; i < length; i++ {
+				b.WriteByte(alphabet[(i*7+n)%len(alphabet)])
+			}
+			s := b.String()
+			want := s[:n-1] + "…"
+			if got := clip(s, n); got != want {
+				t.Fatalf("clip(%q, %d) = %q, want %q", s, n, got, want)
+			}
+			if w := lipgloss.Width(clip(s, n)); w != n {
+				t.Fatalf("clip(%q, %d) = %d cells, want %d", s, n, w, n)
+			}
+		}
+	}
+}
+
+// TestProcessesEmptyStateReadsAsEmpty pins the empty states: the header
+// stays, the message explains the emptiness, and the pane keeps its height
+// so the status line stays at the bottom.
+func TestProcessesEmptyStateReadsAsEmpty(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	if _, _, handled := p.UpdateKey(keyMsg("/")); !handled {
+		t.Fatal("filter key not handled")
+	}
+	for _, r := range "zzz" {
+		p.UpdateKey(keyMsg(string(r)))
+	}
+	out := p.View(100, 24)
+	for _, want := range []string{`no processes match "zzz"`, "CPU%", "0 processes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("empty filter view missing %q:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "\n") + 1; got != 24 {
+		t.Errorf("empty filter view height = %d lines, want 24", got)
+	}
+
+	p.filter.SetValue("")
+	p.procs = nil
+	p.reapply()
+	out = p.View(100, 24)
+	if !strings.Contains(out, "no processes collected") {
+		t.Errorf("empty listing view missing the empty message:\n%s", out)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/felipecastillo-b/serverctl/internal/actions"
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
@@ -218,19 +219,37 @@ func navKeyMap() table.KeyMap {
 	}
 }
 
+// Fixed column widths of the processes table. MEM must fit the widest
+// format.Bytes value a process can carry ("1023.9 GiB", ten cells) or the
+// unit would be clipped off; CPU% fits "100.0"; PID fits Linux's
+// seven-digit maximum. columnGutter is the one-cell right padding
+// table.Styles.Cell adds to every cell.
+const (
+	cpuColumnWidth   = 6
+	memColumnWidth   = 10
+	userColumnWidth  = 10
+	startColumnWidth = 6
+	pidColumnWidth   = 7
+	columnGutter     = 6
+)
+
 // columnsFor lays out the table for a given width; the NAME column absorbs
-// whatever is left.
+// whatever is left so the header and the selected-row bar span the whole
+// pane instead of stopping short of its right edge. Below 46 cells the
+// fixed columns no longer fit; NAME still floors at one cell so the table
+// degrades by clipping at the right edge instead of overflowing earlier.
 func columnsFor(width int) []table.Column {
-	name := width - 44 - 6 // 44 fixed + 6 gutter cells
-	if name < 8 {
-		name = 8
+	name := width - (cpuColumnWidth + memColumnWidth + userColumnWidth +
+		startColumnWidth + pidColumnWidth) - columnGutter
+	if name < 1 {
+		name = 1
 	}
 	return []table.Column{
-		{Title: "CPU%", Width: 6},
-		{Title: "MEM", Width: 8},
-		{Title: "USER", Width: 10},
-		{Title: "START", Width: 6},
-		{Title: "PID", Width: 7},
+		{Title: rightAlign("CPU%", cpuColumnWidth), Width: cpuColumnWidth},
+		{Title: rightAlign("MEM", memColumnWidth), Width: memColumnWidth},
+		{Title: "USER", Width: userColumnWidth},
+		{Title: "START", Width: startColumnWidth},
+		{Title: rightAlign("PID", pidColumnWidth), Width: pidColumnWidth},
 		{Title: "NAME", Width: name},
 	}
 }
@@ -550,29 +569,47 @@ func indexOfPID(procs []core.Process, pid int) int {
 }
 
 // rowsFor renders the displayed processes as table rows clipped to their
-// column widths so alignment never breaks on long names.
+// column widths so alignment never breaks on long names. The numeric
+// columns are right-aligned so magnitudes line up by digit position.
 func rowsFor(procs []core.Process, width int) []table.Row {
 	cols := columnsFor(width)
 	rows := make([]table.Row, 0, len(procs))
 	for _, proc := range procs {
 		rows = append(rows, table.Row{
-			fmt.Sprintf("%.1f", proc.CpuPct),
-			clip(format.Bytes(proc.RSS), cols[1].Width),
+			rightAlign(fmt.Sprintf("%.1f", proc.CpuPct), cols[0].Width),
+			rightAlign(clip(format.Bytes(proc.RSS), cols[1].Width), cols[1].Width),
 			clip(proc.User, cols[2].Width),
 			startAt(proc.StartTime),
-			clip(strconv.Itoa(proc.PID), cols[4].Width),
+			rightAlign(strconv.Itoa(proc.PID), cols[4].Width),
 			clip(proc.Name, cols[5].Width),
 		})
 	}
 	return rows
 }
 
-// clip truncates a cell to n display cells.
+// rightAlign pads s on the left to n cells. It targets the numeric cells
+// (CPU%, MEM, PID), which are ASCII, so len counts cells; the text
+// columns stay left-aligned and clip instead.
+func rightAlign(s string, n int) string {
+	if len(s) >= n {
+		return s
+	}
+	return strings.Repeat(" ", n-len(s)) + s
+}
+
+// clip truncates s to at most n display cells, marking the cut with an
+// ellipsis. It is grapheme- and width-aware: slicing bytes would split a
+// multi-byte rune, and counting runes would mismeasure wide characters,
+// breaking both the column alignment and the mouse hit-test that matches
+// rendered rows against these exact values.
 func clip(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
 	if len(s) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	return ansi.Truncate(s, n, "…")
 }
 
 // startAt renders a process start time compactly: clock time today, date
@@ -631,7 +668,12 @@ func (p *processes) View(width, height int) string {
 	muted := lipgloss.NewStyle().Foreground(p.theme.Muted)
 	danger := lipgloss.NewStyle().Foreground(p.theme.Danger)
 
-	lines := []string{p.table.View()}
+	tableView := p.table.View()
+	if p.loaded && len(p.view) == 0 && body > 1 {
+		tableView = emptyProcessesView(tableView, body, p.emptyMessage(), width, muted)
+	}
+
+	lines := []string{tableView}
 	if p.filtering {
 		lines = append(lines, p.filter.View())
 	}
@@ -645,11 +687,41 @@ func (p *processes) View(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
+// emptyMessage names why the table is empty: no round listed any process,
+// or the active filter kept none.
+func (p *processes) emptyMessage() string {
+	if q := strings.TrimSpace(p.filter.Value()); q != "" {
+		return fmt.Sprintf("no processes match %q", q)
+	}
+	return "no processes collected"
+}
+
+// emptyProcessesView keeps the table header and paints the empty-state
+// message in the first data row, padding the rest so the status line keeps
+// its place at the bottom of the pane. The header line is taken verbatim
+// from the widget's render so it keeps the exact table styling.
+func emptyProcessesView(rendered string, body int, message string, width int, muted lipgloss.Style) string {
+	header, _, _ := strings.Cut(rendered, "\n")
+	lines := make([]string, 0, body)
+	lines = append(lines, header)
+	if width > 2 {
+		message = ansi.Truncate(message, width-2, "…")
+	} else {
+		message = ""
+	}
+	lines = append(lines, muted.Render("  "+message))
+	for len(lines) < body {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // statusLine composes the one-line footer: the collection error
 // first — with the muted age of the listing still on screen while it
 // stays (§5's keeps-last-good state) — the muted collecting state
 // until the first round lands, else the listing summary plus the last
-// action outcome.
+// action outcome. The active sort and an active filter carry the theme's
+// state tones so they read at a glance amid the muted summary.
 func (p *processes) statusLine(muted, danger lipgloss.Style) string {
 	if p.collectErr != nil {
 		return errStatus(p.collectErr, p.lastGood, muted, danger)
@@ -657,11 +729,14 @@ func (p *processes) statusLine(muted, danger lipgloss.Style) string {
 	if !p.loaded {
 		return loadingStatus(muted)
 	}
+	sortTone := lipgloss.NewStyle().Foreground(p.theme.Secondary)
+	filterTone := lipgloss.NewStyle().Foreground(p.theme.Accent)
 	parts := []string{
-		muted.Render(fmt.Sprintf("%d processes · sort %s %s", len(p.view), p.sortKey, sortArrow(p.desc))),
+		muted.Render(fmt.Sprintf("%d processes", len(p.view))),
+		sortTone.Render(fmt.Sprintf("sort %s %s", p.sortKey, sortArrow(p.desc))),
 	}
 	if q := strings.TrimSpace(p.filter.Value()); q != "" {
-		parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
+		parts = append(parts, filterTone.Render(fmt.Sprintf("filter %q", q)))
 	}
 	if p.status != "" {
 		parts = append(parts, muted.Render(p.status))
