@@ -1,13 +1,16 @@
 # serverctl Roadmap
 
-**Current release: [v0.7.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.7.0) (2026-11-20).**
+**Current release: [v0.8.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.8.0) (2026-11-23).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
 added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
 delivered M10 portability; v0.4.0 delivered M11 containers; v0.5.0 shipped the
 M12 SMART slice, and v0.5.1 removed it because SMART reads require root or
 `CAP_SYS_RAWIO` and the project does not escalate or require extra system
 configuration; v0.6.0 delivered M13 UX depth; v0.6.1 fixed table column
-separation; v0.7.0 improved dashboard readability. This document covers what
+separation; v0.7.0 improved dashboard readability; v0.8.0 improved the
+processes panel with a pane-wide aligned table, empty-filter states,
+sort-to-top selection, and one-row-per-notch wheel navigation. This document
+covers what
 is delivered, how work flows, the live bug queue, and the proposed milestones
 ahead. Everything under "Proposed milestones" is a proposal — the maintainer
 prunes, splits, or reorders.
@@ -95,6 +98,9 @@ capacity, per-core CPU as aligned bars (up to eight cores) or a heatmap,
 aligned memory/swap rows with percentages, and sensor names grouped with
 color-coded temperatures
 ([#84](https://github.com/felipecastillo-b/serverctl/pull/84)).
+**v0.8.0** — processes readability: a pane-wide table with aligned numeric
+columns, empty-filter states, sort changes that land on the first row, and
+one-row-per-notch mouse-wheel navigation.
 
 ### Released versions
 
@@ -110,6 +116,7 @@ color-coded temperatures
 | [`v0.6.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.0) | 2026-11-02 | M13: screen stack/detail views, mouse parity, root-confirmed palette actions, screen keys |
 | [`v0.6.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.1) | 2026-11-02 | Fixed table column separation: one-cell gutter between every column |
 | [`v0.7.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.7.0) | 2026-11-20 | Dashboard readability: normalized load, per-core CPU table/heatmap, aligned memory/swap, grouped sensor temperatures |
+| [`v0.8.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.8.0) | 2026-11-23 | Processes readability: pane-wide aligned table, empty states, sort-to-top selection, one-row wheel scrolling |
 
 ### Shipped modules
 
@@ -142,7 +149,7 @@ issue labeled `bug`.
 | Keybindings | Table and viewport navigation keys (arrows, pgup/pgdown, home/end, half-page) are built-in; `screen_keys` covers action bindings only | by design (M13) |
 | Delivery | AUR publication blocked — registrations are disabled on the site; the parked PKGBUILD tracks release metadata only | blocked |
 
-## 4. Proposed milestones (v0.7.0 onward)
+## 4. Proposed milestones (v0.8.0 onward)
 
 No milestone proposals are open. New proposals land here after the maintainer
 scopes them into GitHub Issues.
