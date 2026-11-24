@@ -477,7 +477,10 @@ func (p *processes) signal(pid int, sig actions.ProcessSignal) tea.Cmd {
 }
 
 // applySort switches the sort column, flipping the direction when the
-// same key repeats.
+// same key repeats. A sort is a new question about the listing, so the
+// cursor returns to the first row of the new order: sorting by CPU lands
+// on the biggest consumer instead of staying on a process carried over
+// from the previous order.
 func (p *processes) applySort(k sortKey) {
 	if p.sortKey == k {
 		p.desc = !p.desc
@@ -486,6 +489,14 @@ func (p *processes) applySort(k sortKey) {
 		p.desc = k == sortCPU || k == sortMem // best first; pid/name ascend
 	}
 	p.reapply()
+	if len(p.view) > 0 {
+		// SetCursor(0) recomputes the widget's window around the new
+		// first row and anchorTableCursor normalizes its private offset,
+		// so a cursor that sat deep in the previous order cannot leave
+		// the new first row scrolled out of view.
+		p.table.SetCursor(0)
+		anchorTableCursor(&p.table)
+	}
 }
 
 // reapply re-derives the displayed rows from the current listing, filter

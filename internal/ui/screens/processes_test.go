@@ -125,6 +125,120 @@ func TestProcessesSorting(t *testing.T) {
 	}
 }
 
+// TestProcessesSortJumpsToTop pins the requested sort behavior: changing
+// the sort column (or flipping its direction) lands on the first row of the
+// new order, so the biggest consumer is the row in view instead of a
+// process preserved from the previous order.
+func TestProcessesSortJumpsToTop(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	// Controlled listing: the fixture tracker always reports 0% (static
+	// jiffies), so CPU orders are only observable with these.
+	p.procs = []core.Process{
+		{PID: 10, Name: "alpha", CpuPct: 5, RSS: 100},
+		{PID: 20, Name: "beta", CpuPct: 50, RSS: 900},
+		{PID: 30, Name: "gamma", CpuPct: 20, RSS: 500},
+	}
+	p.reapply()
+	if got := p.view[p.table.Cursor()].PID; got != 20 {
+		t.Fatalf("precondition: cursor on pid %d, want beta (20)", got)
+	}
+
+	// PID ascending puts alpha first; beta would have stayed at index 1
+	// under the old keep-the-selection rule.
+	if _, _, handled := p.UpdateKey(keyMsg("p")); !handled {
+		t.Fatal("p must be claimed by the processes screen")
+	}
+	if p.table.Cursor() != 0 {
+		t.Errorf("cursor = %d after p, want 0", p.table.Cursor())
+	}
+	if got := p.view[0].PID; got != 10 {
+		t.Errorf("top row after p = pid %d, want alpha (10)", got)
+	}
+	if !strings.Contains(strings.Split(p.View(100, 24), "\n")[1], "alpha") {
+		t.Errorf("sorted view does not show the top row first:\n%s", p.View(100, 24))
+	}
+
+	// Flipping the direction asks the opposite question and jumps again.
+	if _, _, handled := p.UpdateKey(keyMsg("p")); !handled {
+		t.Fatal("p must be claimed on the second press too")
+	}
+	if p.table.Cursor() != 0 || p.view[0].PID != 30 {
+		t.Errorf("after flip: cursor=%d top pid=%d, want 0 and 30",
+			p.table.Cursor(), p.view[0].PID)
+	}
+
+	// The reported case: a low-CPU process was selected, then CPU-desc
+	// must land on the biggest consumer, not keep pointing at the low one.
+	if _, _, handled := p.UpdateKey(keyMsg("c")); !handled {
+		t.Fatal("c must be claimed by the processes screen")
+	}
+	if p.table.Cursor() != 0 || p.view[0].PID != 20 {
+		t.Errorf("after c: cursor=%d top pid=%d, want 0 and beta (20)",
+			p.table.Cursor(), p.view[0].PID)
+	}
+}
+
+// TestProcessesSortFromDeepScrollShowsTopRow pins the viewport half of the
+// sort rule: after sorting from a deeply scrolled selection, the first data
+// line rendered must be row 0, not a stale scroll window with the cursor
+// out of view.
+func TestProcessesSortFromDeepScrollShowsTopRow(t *testing.T) {
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), &fakeSender{}, nil)
+	p.procs = make([]core.Process, 50)
+	for i := range p.procs {
+		cpu := float64(0)
+		if i < 40 {
+			cpu = float64(100 - i)
+		}
+		p.procs[i] = core.Process{
+			PID:    1000 + i,
+			Name:   fmt.Sprintf("proc-%02d", i),
+			CpuPct: cpu,
+		}
+	}
+	p.loaded = true
+	p.lastGood = time.Now()
+	p.reapply()
+	p.View(80, 14)
+
+	// Start from PID order so the selected 0%-CPU process sits at the
+	// bottom of the CPU-desc order too, the reported scenario.
+	p.UpdateKey(keyMsg("p"))
+	p.View(80, 14)
+	for i := 0; i < 40; i++ {
+		p.UpdateKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if p.table.Cursor() != 40 {
+		t.Fatalf("precondition: cursor = %d after 40 downs, want 40", p.table.Cursor())
+	}
+
+	if _, _, handled := p.UpdateKey(keyMsg("c")); !handled {
+		t.Fatal("c must be claimed by the processes screen")
+	}
+	out := p.View(80, 14)
+	if first := strings.Split(out, "\n")[1]; !strings.Contains(first, "proc-00") {
+		t.Errorf("first data row after sorting from deep scroll = %q, want proc-00:\n%s", first, out)
+	}
+}
+
+// TestProcessesRefreshKeepsSelectedProcess guards the counterpart of the
+// sort rule: a collection round must keep the selected process when it is
+// still listed, so watching one pid survives refreshes.
+func TestProcessesRefreshKeepsSelectedProcess(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	p.UpdateKey(keyMsg("down"))
+	want := p.view[p.table.Cursor()].PID
+	if want == p.view[0].PID {
+		t.Fatalf("precondition: cursor must be off the first row")
+	}
+
+	updated, _ := p.Update(processesDataMsg{procs: p.procs})
+	p = updated.(*processes)
+	if got := p.view[p.table.Cursor()].PID; got != want {
+		t.Errorf("cursor pid = %d after a refresh, want %d", got, want)
+	}
+}
+
 func TestProcessesKeyOverridesApply(t *testing.T) {
 	p, _ := newFixtureScreenWith(t, map[string]string{"kill": "X", "sort_cpu": "C"})
 
