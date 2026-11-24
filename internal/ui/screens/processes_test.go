@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/felipecastillo-b/serverctl/internal/actions"
 	"github.com/felipecastillo-b/serverctl/internal/collectors"
@@ -120,6 +122,120 @@ func TestProcessesSorting(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// TestProcessesSortJumpsToTop pins the requested sort behavior: changing
+// the sort column (or flipping its direction) lands on the first row of the
+// new order, so the biggest consumer is the row in view instead of a
+// process preserved from the previous order.
+func TestProcessesSortJumpsToTop(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	// Controlled listing: the fixture tracker always reports 0% (static
+	// jiffies), so CPU orders are only observable with these.
+	p.procs = []core.Process{
+		{PID: 10, Name: "alpha", CpuPct: 5, RSS: 100},
+		{PID: 20, Name: "beta", CpuPct: 50, RSS: 900},
+		{PID: 30, Name: "gamma", CpuPct: 20, RSS: 500},
+	}
+	p.reapply()
+	if got := p.view[p.table.Cursor()].PID; got != 20 {
+		t.Fatalf("precondition: cursor on pid %d, want beta (20)", got)
+	}
+
+	// PID ascending puts alpha first; beta would have stayed at index 1
+	// under the old keep-the-selection rule.
+	if _, _, handled := p.UpdateKey(keyMsg("p")); !handled {
+		t.Fatal("p must be claimed by the processes screen")
+	}
+	if p.table.Cursor() != 0 {
+		t.Errorf("cursor = %d after p, want 0", p.table.Cursor())
+	}
+	if got := p.view[0].PID; got != 10 {
+		t.Errorf("top row after p = pid %d, want alpha (10)", got)
+	}
+	if !strings.Contains(strings.Split(p.View(100, 24), "\n")[1], "alpha") {
+		t.Errorf("sorted view does not show the top row first:\n%s", p.View(100, 24))
+	}
+
+	// Flipping the direction asks the opposite question and jumps again.
+	if _, _, handled := p.UpdateKey(keyMsg("p")); !handled {
+		t.Fatal("p must be claimed on the second press too")
+	}
+	if p.table.Cursor() != 0 || p.view[0].PID != 30 {
+		t.Errorf("after flip: cursor=%d top pid=%d, want 0 and 30",
+			p.table.Cursor(), p.view[0].PID)
+	}
+
+	// The reported case: a low-CPU process was selected, then CPU-desc
+	// must land on the biggest consumer, not keep pointing at the low one.
+	if _, _, handled := p.UpdateKey(keyMsg("c")); !handled {
+		t.Fatal("c must be claimed by the processes screen")
+	}
+	if p.table.Cursor() != 0 || p.view[0].PID != 20 {
+		t.Errorf("after c: cursor=%d top pid=%d, want 0 and beta (20)",
+			p.table.Cursor(), p.view[0].PID)
+	}
+}
+
+// TestProcessesSortFromDeepScrollShowsTopRow pins the viewport half of the
+// sort rule: after sorting from a deeply scrolled selection, the first data
+// line rendered must be row 0, not a stale scroll window with the cursor
+// out of view.
+func TestProcessesSortFromDeepScrollShowsTopRow(t *testing.T) {
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), &fakeSender{}, nil)
+	p.procs = make([]core.Process, 50)
+	for i := range p.procs {
+		cpu := float64(0)
+		if i < 40 {
+			cpu = float64(100 - i)
+		}
+		p.procs[i] = core.Process{
+			PID:    1000 + i,
+			Name:   fmt.Sprintf("proc-%02d", i),
+			CpuPct: cpu,
+		}
+	}
+	p.loaded = true
+	p.lastGood = time.Now()
+	p.reapply()
+	p.View(80, 14)
+
+	// Start from PID order so the selected 0%-CPU process sits at the
+	// bottom of the CPU-desc order too, the reported scenario.
+	p.UpdateKey(keyMsg("p"))
+	p.View(80, 14)
+	for i := 0; i < 40; i++ {
+		p.UpdateKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if p.table.Cursor() != 40 {
+		t.Fatalf("precondition: cursor = %d after 40 downs, want 40", p.table.Cursor())
+	}
+
+	if _, _, handled := p.UpdateKey(keyMsg("c")); !handled {
+		t.Fatal("c must be claimed by the processes screen")
+	}
+	out := p.View(80, 14)
+	if first := strings.Split(out, "\n")[1]; !strings.Contains(first, "proc-00") {
+		t.Errorf("first data row after sorting from deep scroll = %q, want proc-00:\n%s", first, out)
+	}
+}
+
+// TestProcessesRefreshKeepsSelectedProcess guards the counterpart of the
+// sort rule: a collection round must keep the selected process when it is
+// still listed, so watching one pid survives refreshes.
+func TestProcessesRefreshKeepsSelectedProcess(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	p.UpdateKey(keyMsg("down"))
+	want := p.view[p.table.Cursor()].PID
+	if want == p.view[0].PID {
+		t.Fatalf("precondition: cursor must be off the first row")
+	}
+
+	updated, _ := p.Update(processesDataMsg{procs: p.procs})
+	p = updated.(*processes)
+	if got := p.view[p.table.Cursor()].PID; got != want {
+		t.Errorf("cursor pid = %d after a refresh, want %d", got, want)
 	}
 }
 
@@ -421,6 +537,112 @@ func TestProcessesMouseConfirmsModal(t *testing.T) {
 	}
 }
 
+// TestProcessesWheelMovesSelection pins the wheel contract: one notch
+// moves the selection one row, exactly the arrow-key step, clamped at both
+// ends. Wheel events over the sidebar fall through to the shell, and an
+// open confirmation modal keeps swallowing every event.
+func TestProcessesWheelMovesSelection(t *testing.T) {
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), &fakeSender{}, nil)
+	p.procs = make([]core.Process, 10)
+	for i := range p.procs {
+		p.procs[i] = core.Process{PID: 100 + i, Name: fmt.Sprintf("proc-%02d", i)}
+	}
+	p.loaded = true
+	p.lastGood = time.Now()
+	p.reapply()
+	p.View(100, 24)
+
+	cases := []struct {
+		name   string
+		button tea.MouseButton
+		want   int
+	}{
+		{"wheel down steps one row", tea.MouseButtonWheelDown, 1},
+		{"second notch steps one more", tea.MouseButtonWheelDown, 2},
+		{"wheel up steps back one", tea.MouseButtonWheelUp, 1},
+	}
+	for _, tc := range cases {
+		updated, cmd, handled := p.UpdateMouse(mousePress(tc.button, 2, 2))
+		p = updated.(*processes)
+		if !handled || cmd != nil {
+			t.Fatalf("%s: handled=%v cmd=%v, want claimed without a command", tc.name, handled, cmd)
+		}
+		if p.table.Cursor() != tc.want {
+			t.Errorf("%s: cursor = %d, want %d", tc.name, p.table.Cursor(), tc.want)
+		}
+	}
+
+	// Both ends clamp instead of wrapping or overflowing.
+	p.table.SetCursor(len(p.view) - 1)
+	updated, _, _ := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	p = updated.(*processes)
+	if got, want := p.table.Cursor(), len(p.view)-1; got != want {
+		t.Errorf("wheel down at the end: cursor = %d, want %d", got, want)
+	}
+	p.table.SetCursor(0)
+	updated, _, _ = p.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+	p = updated.(*processes)
+	if p.table.Cursor() != 0 {
+		t.Errorf("wheel up at the start: cursor = %d, want 0", p.table.Cursor())
+	}
+
+	// Over the sidebar the shell owns the event: local X is negative.
+	if _, _, handled := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, -1, 2)); handled {
+		t.Error("wheel over the sidebar must fall through to the shell")
+	}
+	// The filter/status lines below the table and the shell footer past
+	// the pane keep their own rows.
+	for _, y := range []int{23, 24} {
+		if _, _, handled := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, y)); handled {
+			t.Errorf("wheel over row %d (outside the table) must fall through", y)
+		}
+	}
+
+	// An open confirmation modal is exclusive and swallows the wheel.
+	if _, _, handled := p.UpdateKey(keyMsg("k")); !handled || !p.modalOpen {
+		t.Fatal("k must open the KILL confirmation")
+	}
+	cursor := p.table.Cursor()
+	updated, cmd, handled := p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	p = updated.(*processes)
+	if !handled || !p.modalOpen || cmd != nil || p.table.Cursor() != cursor {
+		t.Errorf("modal must swallow the wheel: handled=%v open=%v cmd=%v cursor=%d want %d",
+			handled, p.modalOpen, cmd, p.table.Cursor(), cursor)
+	}
+}
+
+// TestProcessesWheelKeepsSelectionVisible pins the viewport half of the
+// wheel contract: after every notch, down to the last process and back to
+// the first, the selected row is still rendered inside the visible table.
+func TestProcessesWheelKeepsSelectionVisible(t *testing.T) {
+	p := newProcesses(collectors.New("../../collectors/testdata"), theme.Dark(), &fakeSender{}, nil)
+	p.procs = make([]core.Process, 60)
+	for i := range p.procs {
+		p.procs[i] = core.Process{PID: 100 + i, Name: fmt.Sprintf("proc-%02d", i)}
+	}
+	p.loaded = true
+	p.lastGood = time.Now()
+	p.reapply()
+	p.View(80, 14)
+
+	checkVisible := func(dir string, step int) {
+		out := p.View(80, 14)
+		name := p.view[p.table.Cursor()].Name
+		if !strings.Contains(out, name) {
+			t.Fatalf("%s step %d: cursor on %s (row %d) is not visible:\n%s",
+				dir, step, name, p.table.Cursor(), out)
+		}
+	}
+	for i := 0; i < 30; i++ {
+		p.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+		checkVisible("down", i)
+	}
+	for i := 0; i < 30; i++ {
+		p.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+		checkVisible("up", i)
+	}
+}
+
 func TestProcessesClickSelectsRow(t *testing.T) {
 	p, _ := newFixtureScreen(t)
 	p.View(100, 24)
@@ -487,5 +709,161 @@ func TestProcessesStaleRoundAgesListing(t *testing.T) {
 	out = p.View(100, 24)
 	if strings.Contains(out, "stale") || strings.Contains(out, "/proc vanished") {
 		t.Errorf("a recovered round must clear the error and the age:\n%s", out)
+	}
+}
+
+// TestProcessesColumnsFillPaneWidth pins the table's layout contract: the
+// column widths plus the one-cell gutter every cell carries add up to the
+// pane width, so the header and the selected-row bar reach the right edge
+// instead of stopping several cells short of it.
+func TestProcessesColumnsFillPaneWidth(t *testing.T) {
+	for _, width := range []int{46, 51, 52, 53, 60, 80, 100, 120, 200} {
+		cols := columnsFor(width)
+		total := 0
+		for _, col := range cols {
+			if col.Width < 1 {
+				t.Fatalf("width %d: column %q has non-positive width %d", width, col.Title, col.Width)
+			}
+			total += col.Width + 1 // table.Styles.Cell pads every cell right by one.
+		}
+		if total != width {
+			t.Errorf("width %d: columns plus gutter = %d, want the pane width", width, total)
+		}
+	}
+
+	p, _ := newFixtureScreen(t)
+	for _, width := range []int{46, 51, 52, 53, 100} {
+		header := strings.Split(p.View(width, 24), "\n")[0]
+		if got := lipgloss.Width(header); got != width {
+			t.Errorf("width %d: header line width = %d:\n%q", width, got, header)
+		}
+	}
+}
+
+// TestProcessesNumericColumnsAlignRight pins the right-alignment of the
+// three numeric columns, headers included: magnitudes compare by digit
+// position instead of by a ragged left edge.
+func TestProcessesNumericColumnsAlignRight(t *testing.T) {
+	cols := columnsFor(100)
+	wantTitles := map[int]string{
+		0: "  CPU%",
+		1: "       MEM",
+		4: "    PID",
+	}
+	for idx, want := range wantTitles {
+		if cols[idx].Title != want {
+			t.Errorf("column %d title = %q, want %q", idx, cols[idx].Title, want)
+		}
+	}
+
+	rows := rowsFor([]core.Process{
+		{PID: 7, Name: "small", CpuPct: 9.9, RSS: 5 * 1024 * 1024},
+		{PID: 1234567, Name: "big", CpuPct: 99.9, RSS: 900 * 1024 * 1024},
+	}, 100)
+	want := [][3]string{
+		{"   9.9", "   5.0 MiB", "      7"},
+		{"  99.9", " 900.0 MiB", "1234567"},
+	}
+	cellIndexes := [3]int{0, 1, 4}
+	for i, row := range rows {
+		for j, cell := range cellIndexes {
+			if row[cell] != want[i][j] {
+				t.Errorf("row %d cell %d = %q, want %q", i, cell, row[cell], want[i][j])
+			}
+			if got, width := len(row[cell]), cols[cell].Width; got != width {
+				t.Errorf("row %d cell %d width = %d, want %d", i, cell, got, width)
+			}
+		}
+	}
+}
+
+// TestProcessesMemColumnNeverClipsTheUnit pins the MEM column width: with
+// the old eight cells, values over 999 MiB lost their unit to an ellipsis.
+func TestProcessesMemColumnNeverClipsTheUnit(t *testing.T) {
+	rows := rowsFor([]core.Process{{RSS: 650 * 1024 * 1024}}, 100)
+	mem := strings.TrimSpace(rows[0][1])
+	if !strings.HasSuffix(mem, "MiB") || strings.Contains(mem, "…") {
+		t.Errorf("MEM cell = %q, want the full value and unit", rows[0][1])
+	}
+}
+
+// TestClipKeepsRunesAndCellWidth pins the shared clip helper: it must cut
+// by display cells, never mid-rune, because the table's mouse hit-test
+// matches its rendered rows against the same pre-clipped values.
+func TestClipKeepsRunesAndCellWidth(t *testing.T) {
+	cases := []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"short", 10, "short"},
+		{"aña", 3, "aña"},    // bytes exceed the width, cells do not
+		{"añabc", 4, "aña…"}, // cut keeps both runes whole
+		{"日本語", 4, "日…"},     // wide runes count two cells each
+	}
+	for _, tc := range cases {
+		got := clip(tc.in, tc.width)
+		if got != tc.want {
+			t.Errorf("clip(%q, %d) = %q, want %q", tc.in, tc.width, got, tc.want)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("clip(%q, %d) split a rune: %q", tc.in, tc.width, got)
+		}
+		if w := lipgloss.Width(got); w > tc.width {
+			t.Errorf("clip(%q, %d) = %q is %d cells wide", tc.in, tc.width, got, w)
+		}
+	}
+}
+
+// TestClipASCIIMatchesLegacySlice pins the shared helper's compatibility:
+// for ASCII, the width-aware clip must equal the old byte slice the other
+// table screens were built against, so their rendering stays untouched.
+func TestClipASCIIMatchesLegacySlice(t *testing.T) {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /._-:[]()"
+	for n := 1; n <= 30; n++ {
+		for length := n + 1; length <= n+20; length++ {
+			var b strings.Builder
+			for i := 0; i < length; i++ {
+				b.WriteByte(alphabet[(i*7+n)%len(alphabet)])
+			}
+			s := b.String()
+			want := s[:n-1] + "…"
+			if got := clip(s, n); got != want {
+				t.Fatalf("clip(%q, %d) = %q, want %q", s, n, got, want)
+			}
+			if w := lipgloss.Width(clip(s, n)); w != n {
+				t.Fatalf("clip(%q, %d) = %d cells, want %d", s, n, w, n)
+			}
+		}
+	}
+}
+
+// TestProcessesEmptyStateReadsAsEmpty pins the empty states: the header
+// stays, the message explains the emptiness, and the pane keeps its height
+// so the status line stays at the bottom.
+func TestProcessesEmptyStateReadsAsEmpty(t *testing.T) {
+	p, _ := newFixtureScreen(t)
+	if _, _, handled := p.UpdateKey(keyMsg("/")); !handled {
+		t.Fatal("filter key not handled")
+	}
+	for _, r := range "zzz" {
+		p.UpdateKey(keyMsg(string(r)))
+	}
+	out := p.View(100, 24)
+	for _, want := range []string{`no processes match "zzz"`, "CPU%", "0 processes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("empty filter view missing %q:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "\n") + 1; got != 24 {
+		t.Errorf("empty filter view height = %d lines, want 24", got)
+	}
+
+	p.filter.SetValue("")
+	p.procs = nil
+	p.reapply()
+	out = p.View(100, 24)
+	if !strings.Contains(out, "no processes collected") {
+		t.Errorf("empty listing view missing the empty message:\n%s", out)
 	}
 }
