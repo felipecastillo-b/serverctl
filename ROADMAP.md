@@ -1,6 +1,6 @@
 # serverctl Roadmap
 
-**Current release: [v0.8.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.8.0) (2026-11-23).**
+**Current release: [v0.9.0](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.9.0) (2026-11-25).**
 Milestones M0–M8 shipped in v0.1.0; v0.2.0 fixed hardware sensor detection and
 added usefulness ordering; v0.2.1 delivered the M9 hardening batch; v0.3.0
 delivered M10 portability; v0.4.0 delivered M11 containers; v0.5.0 shipped the
@@ -9,7 +9,9 @@ M12 SMART slice, and v0.5.1 removed it because SMART reads require root or
 configuration; v0.6.0 delivered M13 UX depth; v0.6.1 fixed table column
 separation; v0.7.0 improved dashboard readability; v0.8.0 improved the
 processes panel with a pane-wide aligned table, empty-filter states,
-sort-to-top selection, and one-row-per-notch wheel navigation. This document
+sort-to-top selection, and one-row-per-notch wheel navigation; v0.9.0 improved
+the services panel with mouse-wheel scrolling, a color-coded health summary,
+empty states, and sort-to-top selection. This document
 covers what
 is delivered, how work flows, the live bug queue, and the proposed milestones
 ahead. Everything under "Proposed milestones" is a proposal — the maintainer
@@ -27,7 +29,7 @@ prunes, splits, or reorders.
 ### Release policy (0.x)
 
 - Bug-fix-only batches tag patch releases: `v0.7.1`, `v0.7.2`, ...
-- The first new feature or visible change bumps MINOR: `v0.8.0`.
+- The first new feature or visible change bumps MINOR: `v0.9.0`.
 - Docs-only changes ride along with the next release and do not need a tag.
 - Tags are annotated (`serverctl vX.Y.Z — summary`); the release workflow
   publishes automatically on tag push.
@@ -103,6 +105,9 @@ columns, empty-filter states, sort changes that land on the first row, and
 one-row-per-notch mouse-wheel navigation
 ([#85](https://github.com/felipecastillo-b/serverctl/issues/85),
 [#86](https://github.com/felipecastillo-b/serverctl/pull/86)).
+**v0.9.0** — services readability: one-row-per-notch mouse-wheel navigation,
+a color-coded health summary, empty states, and sort changes that land on the
+first unit.
 
 ### Released versions
 
@@ -119,6 +124,7 @@ one-row-per-notch mouse-wheel navigation
 | [`v0.6.1`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.6.1) | 2026-11-02 | Fixed table column separation: one-cell gutter between every column |
 | [`v0.7.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.7.0) | 2026-11-20 | Dashboard readability: normalized load, per-core CPU table/heatmap, aligned memory/swap, grouped sensor temperatures |
 | [`v0.8.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.8.0) | 2026-11-23 | Processes readability: pane-wide aligned table, empty states, sort-to-top selection, one-row wheel scrolling |
+| [`v0.9.0`](https://github.com/felipecastillo-b/serverctl/releases/tag/v0.9.0) | 2026-11-25 | Services readability: one-row wheel scrolling, color-coded health summary, empty states, sort-to-top selection |
 
 ### Shipped modules
 
