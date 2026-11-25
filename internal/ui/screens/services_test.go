@@ -732,6 +732,37 @@ func TestServicesWheelKeepsSelectionVisible(t *testing.T) {
 	}
 }
 
+// TestServicesEmptyStateNamesTheReason pins the empty body: a listing
+// with no services and a filter with no survivors must say why the table
+// is empty instead of leaving a bare header, and the first collection
+// round keeps its own collecting state.
+func TestServicesEmptyStateNamesTheReason(t *testing.T) {
+	empty := newServicesScreen(t, &fakeLister{units: nil}, &fakeManager{})
+	out := empty.View(100, 24)
+	if !strings.Contains(out, "no services collected") {
+		t.Errorf("an empty listing must name the empty state:\n%s", out)
+	}
+	if !strings.Contains(out, "UNIT") {
+		t.Errorf("the empty state must keep the table header:\n%s", out)
+	}
+
+	filtered := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+	filtered.UpdateKey(keyMsg("/"))
+	for _, r := range "zzz" {
+		filtered.UpdateKey(keyMsg(string(r)))
+	}
+	if out := filtered.View(100, 24); !strings.Contains(out, `no services match "zzz"`) {
+		t.Errorf("an empty filter must name the query:\n%s", out)
+	}
+
+	bare := newServices(&fakeLister{units: unitFixture}, theme.Dark(), &fakeManager{}, defaultServicesInterval, nil)
+	if out := bare.View(100, 24); strings.Contains(out, "no services collected") {
+		t.Errorf("the first collection round is not an empty listing:\n%s", out)
+	} else if !strings.Contains(out, "collecting...") {
+		t.Errorf("the first collection round must show the collecting state:\n%s", out)
+	}
+}
+
 func TestServicesTickRearmsOwnCadence(t *testing.T) {
 	lister := &fakeLister{units: unitFixture}
 	s := newServicesScreen(t, lister, &fakeManager{})
@@ -893,12 +924,15 @@ func TestNeedsPrivileges(t *testing.T) {
 // TestServicesFailedCountCallout pins the attention callout of the
 // healthy summary: the failed units render as their own part of the
 // status line (in the danger role, m7b) while the rest of the line
-// stays muted.
+// stays muted, and the health summary counts the active and activating
+// units beside them.
 func TestServicesFailedCountCallout(t *testing.T) {
 	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
 	out := s.View(100, 24)
-	if !strings.Contains(out, "1 failed") {
-		t.Errorf("the failed unit must be called out:\n%s", out)
+	for _, want := range []string{"1 failed", "1 activating", "2 active"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the health summary must carry %q:\n%s", want, out)
+		}
 	}
 	healthy := slices.Clone(unitFixture)
 	healthy[0].Active = "active"

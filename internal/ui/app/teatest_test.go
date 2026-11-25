@@ -61,11 +61,11 @@ func TestProcessesScreenBootsAndRenders(t *testing.T) {
 // TestServicesScreenBootsAndRenders smoke-tests M4b end to end in a
 // live pty: tab twice into the services module, wait until a real
 // D-Bus ListUnits round flowed through collect → route → table (the
-// status line only renders its "services · sort" summary after the
-// first data round lands), then quit. Any systemd host — a CI runner or
-// a dev machine — has at least one loaded .service unit, so the summary
-// is a stable marker that names no specific unit. Skipped when no
-// system bus exists (CI's ubuntu-latest runners have one).
+// status line only renders its "N services ·" summary after the first
+// data round lands), then quit. Any systemd host — a CI runner or a dev
+// machine — renders the summary regardless of unit states, so the
+// marker is stable and names no specific unit. Skipped when no system
+// bus exists (CI's ubuntu-latest runners have one).
 func TestServicesScreenBootsAndRenders(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: talks to the real system bus")
@@ -86,7 +86,7 @@ func TestServicesScreenBootsAndRenders(t *testing.T) {
 	// One WaitFor only: it consumes the output stream, and the renderer
 	// skips unchanged lines (see TestShellBootsAndQuits).
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return bytes.Contains(bts, []byte("services · sort"))
+		return bytes.Contains(bts, []byte(" services · "))
 	}, teatest.WithDuration(10*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})

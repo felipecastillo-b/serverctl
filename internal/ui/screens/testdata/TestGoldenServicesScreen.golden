@@ -21,4 +21,4 @@ postgres.service             inactive   dead       disabled   PostgreSQL databas
                                                                                                     
                                                                                                     
                                                                                                     
-5 services · sort active ↑ · 1 failed
+5 services · 1 failed · 1 activating · 2 active · sort active ↑
