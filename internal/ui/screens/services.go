@@ -584,7 +584,10 @@ func (s *services) runUnit(verb UnitAction, name string) tea.Cmd {
 }
 
 // applySort switches the sort column, flipping the direction when the
-// same key repeats.
+// same key repeats. A sort is a new question about the listing, so the
+// cursor returns to the first row of the new order: sorting by name lands
+// on the first name instead of staying on a unit carried over from the
+// previous order.
 func (s *services) applySort(k unitSortKey) {
 	if s.sortKey == k {
 		s.desc = !s.desc
@@ -593,6 +596,14 @@ func (s *services) applySort(k unitSortKey) {
 		s.desc = false // attention and alphabetical both read best ascending
 	}
 	s.reapply()
+	if len(s.view) > 0 {
+		// SetCursor(0) recomputes the widget's window around the new
+		// first row and anchorTableCursor normalizes its private offset,
+		// so a cursor that sat deep in the previous order cannot leave
+		// the new first row scrolled out of view.
+		s.table.SetCursor(0)
+		anchorTableCursor(&s.table)
+	}
 }
 
 // reapply re-derives the displayed rows from the current listing,

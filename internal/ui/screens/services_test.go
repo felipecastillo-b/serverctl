@@ -763,6 +763,53 @@ func TestServicesEmptyStateNamesTheReason(t *testing.T) {
 	}
 }
 
+// TestServicesSortJumpsToTop pins the sort reset: a new order is a new
+// question about the listing, so every sort press lands the cursor on the
+// first row of that order instead of trailing the previously selected
+// unit.
+func TestServicesSortJumpsToTop(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: manyUnitFixture(40)}, &fakeManager{})
+	s.View(100, 14)
+	s.table.SetCursor(10)
+
+	steps := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{"name ascending starts at the first name", "n", "unit-00.service"},
+		{"the same key flips direction and starts at the first row", "n", "unit-39.service"},
+		{"active sort starts at the first attention row", "a", "unit-00.service"},
+	}
+	for _, tc := range steps {
+		s.table.SetCursor(10)
+		updated, _, handled := s.UpdateKey(keyMsg(tc.key))
+		s = updated.(*services)
+		if !handled {
+			t.Fatalf("%s: %q must be claimed by the services screen", tc.name, tc.key)
+		}
+		if s.table.Cursor() != 0 {
+			t.Errorf("%s: cursor = %d, want the first row 0", tc.name, s.table.Cursor())
+		}
+		if got := s.view[s.table.Cursor()].Name; got != tc.want {
+			t.Errorf("%s: selected %q, want %q", tc.name, got, tc.want)
+		}
+		if out := s.View(100, 14); !strings.Contains(out, tc.want) {
+			t.Errorf("%s: the first row of the new order must be visible:\n%s", tc.name, out)
+		}
+	}
+
+	// Sorting an empty listing is a no-op, not a panic: the widget has no
+	// valid row to point at.
+	empty := newServicesScreen(t, &fakeLister{units: nil}, &fakeManager{})
+	empty.View(100, 24)
+	updated, _, handled := empty.UpdateKey(keyMsg("n"))
+	empty = updated.(*services)
+	if !handled || empty.table.Cursor() != -1 {
+		t.Errorf("empty listing: handled=%v cursor=%d, want claimed with no row (-1)", handled, empty.table.Cursor())
+	}
+}
+
 func TestServicesTickRearmsOwnCadence(t *testing.T) {
 	lister := &fakeLister{units: unitFixture}
 	s := newServicesScreen(t, lister, &fakeManager{})
