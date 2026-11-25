@@ -107,7 +107,8 @@ one-row-per-notch mouse-wheel navigation
 [#86](https://github.com/felipecastillo-b/serverctl/pull/86)).
 **v0.9.0** — services readability: one-row-per-notch mouse-wheel navigation,
 a color-coded health summary, empty states, and sort changes that land on the
-first unit.
+first unit
+([#87](https://github.com/felipecastillo-b/serverctl/pull/87)).
 
 ### Released versions
 
