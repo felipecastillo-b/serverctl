@@ -362,13 +362,9 @@ func (p *processes) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return p, nil, true
 }
 
-// processWheelStep is how many rows one wheel notch moves: one, the same
-// step the arrow keys use, so the wheel walks the list process by process.
-const processWheelStep = 1
-
 // UpdateMouse routes presses to the open confirmation modal, then handles
 // the wheel and left clicks on the table. The wheel moves the selection by
-// processWheelStep rows, clamped at both ends, exactly the navigation the
+// tableWheelStep rows, clamped at both ends, exactly the navigation the
 // arrow keys offer; a left press selects the clicked row. Clicks outside
 // the table and events over the sidebar or header fall through to the
 // shell. An open modal swallows every event.
@@ -399,9 +395,9 @@ func (p *processes) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 			return p, nil, false
 		}
 		if event.Button == tea.MouseButtonWheelUp {
-			p.scrollRows(-processWheelStep)
+			p.scrollRows(-tableWheelStep)
 		} else {
-			p.scrollRows(processWheelStep)
+			p.scrollRows(tableWheelStep)
 		}
 		return p, nil, true
 	}
@@ -724,7 +720,7 @@ func (p *processes) View(width, height int) string {
 
 	tableView := p.table.View()
 	if p.loaded && len(p.view) == 0 && body > 1 {
-		tableView = emptyProcessesView(tableView, body, p.emptyMessage(), width, muted)
+		tableView = emptyTableView(tableView, body, p.emptyMessage(), width, muted)
 	}
 
 	lines := []string{tableView}
@@ -750,32 +746,12 @@ func (p *processes) emptyMessage() string {
 	return "no processes collected"
 }
 
-// emptyProcessesView keeps the table header and paints the empty-state
-// message in the first data row, padding the rest so the status line keeps
-// its place at the bottom of the pane. The header line is taken verbatim
-// from the widget's render so it keeps the exact table styling.
-func emptyProcessesView(rendered string, body int, message string, width int, muted lipgloss.Style) string {
-	header, _, _ := strings.Cut(rendered, "\n")
-	lines := make([]string, 0, body)
-	lines = append(lines, header)
-	if width > 2 {
-		message = ansi.Truncate(message, width-2, "…")
-	} else {
-		message = ""
-	}
-	lines = append(lines, muted.Render("  "+message))
-	for len(lines) < body {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
-}
-
 // statusLine composes the one-line footer: the collection error
 // first — with the muted age of the listing still on screen while it
-// stays (§5's keeps-last-good state) — the muted collecting state
-// until the first round lands, else the listing summary plus the last
-// action outcome. The active sort and an active filter carry the theme's
-// state tones so they read at a glance amid the muted summary.
+// stays (§5's keeps-last-good state) — the muted collecting state until
+// the first round lands, else the listing summary plus the last action
+// outcome. The active sort and an active filter carry the theme's state
+// tones so they read at a glance amid the muted summary.
 func (p *processes) statusLine(muted, danger lipgloss.Style) string {
 	if p.collectErr != nil {
 		return errStatus(p.collectErr, p.lastGood, muted, danger)

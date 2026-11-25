@@ -3,6 +3,7 @@ package screens
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -621,6 +622,194 @@ func TestServicesClickSelectsRow(t *testing.T) {
 	}
 }
 
+// manyUnitFixture builds a listing big enough to overflow a short table,
+// so the wheel tests exercise the viewport and not only the cursor.
+func manyUnitFixture(n int) []core.Service {
+	units := make([]core.Service, n)
+	for i := range units {
+		units[i] = core.Service{
+			Name:      fmt.Sprintf("unit-%02d.service", i),
+			Active:    "active",
+			Sub:       "running",
+			FileState: "enabled",
+		}
+	}
+	return units
+}
+
+// TestServicesWheelStepsOneRow pins the mouse-notch contract of the
+// services table: one row per notch in both directions, clamped at both
+// ends, exactly the step a line key takes.
+func TestServicesWheelStepsOneRow(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: manyUnitFixture(40)}, &fakeManager{})
+	s.View(100, 24)
+
+	cases := []struct {
+		name   string
+		button tea.MouseButton
+		want   int
+	}{
+		{"wheel down steps one row", tea.MouseButtonWheelDown, 1},
+		{"second notch steps one more", tea.MouseButtonWheelDown, 2},
+		{"wheel up steps back one", tea.MouseButtonWheelUp, 1},
+	}
+	for _, tc := range cases {
+		updated, cmd, handled := s.UpdateMouse(mousePress(tc.button, 2, 2))
+		s = updated.(*services)
+		if !handled || cmd != nil {
+			t.Fatalf("%s: handled=%v cmd=%v, want claimed without a command", tc.name, handled, cmd)
+		}
+		if s.table.Cursor() != tc.want {
+			t.Errorf("%s: cursor = %d, want %d", tc.name, s.table.Cursor(), tc.want)
+		}
+	}
+
+	// Both ends clamp instead of wrapping or overflowing.
+	s.table.SetCursor(len(s.view) - 1)
+	updated, _, _ := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	s = updated.(*services)
+	if got, want := s.table.Cursor(), len(s.view)-1; got != want {
+		t.Errorf("wheel down at the end: cursor = %d, want %d", got, want)
+	}
+	s.table.SetCursor(0)
+	updated, _, _ = s.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+	s = updated.(*services)
+	if s.table.Cursor() != 0 {
+		t.Errorf("wheel up at the start: cursor = %d, want 0", s.table.Cursor())
+	}
+
+	// Over the sidebar the shell owns the event: local X is negative.
+	if _, _, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, -1, 2)); handled {
+		t.Error("wheel over the sidebar must fall through to the shell")
+	}
+	// The status line below the table and the shell footer past the
+	// pane keep their own rows.
+	for _, y := range []int{23, 24} {
+		if _, _, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, y)); handled {
+			t.Errorf("wheel over row %d (outside the table) must fall through", y)
+		}
+	}
+
+	// An open confirmation modal is exclusive and swallows the wheel.
+	if _, _, handled := s.UpdateKey(keyMsg("x")); !handled || !s.modalOpen {
+		t.Fatal("x must open the STOP confirmation")
+	}
+	s.View(100, 24)
+	cursor := s.table.Cursor()
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	s = updated.(*services)
+	if !handled || !s.modalOpen || cmd != nil || s.table.Cursor() != cursor {
+		t.Errorf("modal must swallow the wheel: handled=%v open=%v cmd=%v cursor=%d want %d",
+			handled, s.modalOpen, cmd, s.table.Cursor(), cursor)
+	}
+}
+
+// TestServicesWheelKeepsSelectionVisible pins the viewport half of the
+// wheel contract: after every notch, down to the end of the listing and
+// back to the first row, the selected unit is still rendered inside the
+// visible table.
+func TestServicesWheelKeepsSelectionVisible(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: manyUnitFixture(40)}, &fakeManager{})
+	s.View(100, 14)
+
+	checkVisible := func(dir string, step int) {
+		out := s.View(100, 14)
+		name := s.view[s.table.Cursor()].Name
+		if !strings.Contains(out, name) {
+			t.Fatalf("%s step %d: cursor on %s (row %d) is not visible:\n%s",
+				dir, step, name, s.table.Cursor(), out)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		updated, _, _ := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+		s = updated.(*services)
+		checkVisible("down", i)
+	}
+	for i := 0; i < 20; i++ {
+		updated, _, _ := s.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+		s = updated.(*services)
+		checkVisible("up", i)
+	}
+}
+
+// TestServicesEmptyStateNamesTheReason pins the empty body: a listing
+// with no services and a filter with no survivors must say why the table
+// is empty instead of leaving a bare header, and the first collection
+// round keeps its own collecting state.
+func TestServicesEmptyStateNamesTheReason(t *testing.T) {
+	empty := newServicesScreen(t, &fakeLister{units: nil}, &fakeManager{})
+	out := empty.View(100, 24)
+	if !strings.Contains(out, "no services collected") {
+		t.Errorf("an empty listing must name the empty state:\n%s", out)
+	}
+	if !strings.Contains(out, "UNIT") {
+		t.Errorf("the empty state must keep the table header:\n%s", out)
+	}
+
+	filtered := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
+	filtered.UpdateKey(keyMsg("/"))
+	for _, r := range "zzz" {
+		filtered.UpdateKey(keyMsg(string(r)))
+	}
+	if out := filtered.View(100, 24); !strings.Contains(out, `no services match "zzz"`) {
+		t.Errorf("an empty filter must name the query:\n%s", out)
+	}
+
+	bare := newServices(&fakeLister{units: unitFixture}, theme.Dark(), &fakeManager{}, defaultServicesInterval, nil)
+	if out := bare.View(100, 24); strings.Contains(out, "no services collected") {
+		t.Errorf("the first collection round is not an empty listing:\n%s", out)
+	} else if !strings.Contains(out, "collecting...") {
+		t.Errorf("the first collection round must show the collecting state:\n%s", out)
+	}
+}
+
+// TestServicesSortJumpsToTop pins the sort reset: a new order is a new
+// question about the listing, so every sort press lands the cursor on the
+// first row of that order instead of trailing the previously selected
+// unit.
+func TestServicesSortJumpsToTop(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: manyUnitFixture(40)}, &fakeManager{})
+	s.View(100, 14)
+	s.table.SetCursor(10)
+
+	steps := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{"name ascending starts at the first name", "n", "unit-00.service"},
+		{"the same key flips direction and starts at the first row", "n", "unit-39.service"},
+		{"active sort starts at the first attention row", "a", "unit-00.service"},
+	}
+	for _, tc := range steps {
+		s.table.SetCursor(10)
+		updated, _, handled := s.UpdateKey(keyMsg(tc.key))
+		s = updated.(*services)
+		if !handled {
+			t.Fatalf("%s: %q must be claimed by the services screen", tc.name, tc.key)
+		}
+		if s.table.Cursor() != 0 {
+			t.Errorf("%s: cursor = %d, want the first row 0", tc.name, s.table.Cursor())
+		}
+		if got := s.view[s.table.Cursor()].Name; got != tc.want {
+			t.Errorf("%s: selected %q, want %q", tc.name, got, tc.want)
+		}
+		if out := s.View(100, 14); !strings.Contains(out, tc.want) {
+			t.Errorf("%s: the first row of the new order must be visible:\n%s", tc.name, out)
+		}
+	}
+
+	// Sorting an empty listing is a no-op, not a panic: the widget has no
+	// valid row to point at.
+	empty := newServicesScreen(t, &fakeLister{units: nil}, &fakeManager{})
+	empty.View(100, 24)
+	updated, _, handled := empty.UpdateKey(keyMsg("n"))
+	empty = updated.(*services)
+	if !handled || empty.table.Cursor() != -1 {
+		t.Errorf("empty listing: handled=%v cursor=%d, want claimed with no row (-1)", handled, empty.table.Cursor())
+	}
+}
+
 func TestServicesTickRearmsOwnCadence(t *testing.T) {
 	lister := &fakeLister{units: unitFixture}
 	s := newServicesScreen(t, lister, &fakeManager{})
@@ -782,12 +971,15 @@ func TestNeedsPrivileges(t *testing.T) {
 // TestServicesFailedCountCallout pins the attention callout of the
 // healthy summary: the failed units render as their own part of the
 // status line (in the danger role, m7b) while the rest of the line
-// stays muted.
+// stays muted, and the health summary counts the active and activating
+// units beside them.
 func TestServicesFailedCountCallout(t *testing.T) {
 	s := newServicesScreen(t, &fakeLister{units: unitFixture}, &fakeManager{})
 	out := s.View(100, 24)
-	if !strings.Contains(out, "1 failed") {
-		t.Errorf("the failed unit must be called out:\n%s", out)
+	for _, want := range []string{"1 failed", "1 activating", "2 active"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the health summary must carry %q:\n%s", want, out)
+		}
 	}
 	healthy := slices.Clone(unitFixture)
 	healthy[0].Active = "active"

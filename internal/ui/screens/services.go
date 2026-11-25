@@ -410,9 +410,12 @@ func (s *services) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return s, nil, true
 }
 
-// UpdateMouse routes presses to the open confirmation modal, else a left
-// press selects the clicked table row: the exact parity of the up/down
-// keys. Clicks outside the table fall through to the shell.
+// UpdateMouse routes presses to the open confirmation modal, then handles
+// the wheel and left clicks on the table. The wheel moves the selection by
+// tableWheelStep rows, clamped at both ends, exactly the navigation the
+// up/down keys offer; a left press selects the clicked table row. Click
+// outside the table and events over the sidebar or header fall through to
+// the shell. An open modal swallows every event.
 func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	if s.modalOpen {
 		s.modal.UpdateMouse(msg)
@@ -420,10 +423,33 @@ func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	}
 
 	event := tea.MouseEvent(msg)
-	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
+	// The shell subtracts the sidebar width and the header row before
+	// delivery, so events over them carry negative coordinates.
+	if event.X < 0 || event.Y < 0 {
+		return s, nil, false
+	}
+	if event.Action != tea.MouseActionPress {
 		return s, nil, false
 	}
 	if s.lastWidth <= 0 {
+		return s, nil, false
+	}
+	switch event.Button {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		// The table owns the header plus its viewport rows; the filter
+		// and status lines below it (and the shell footer past the
+		// pane) keep their own rows, so a wheel there falls through.
+		if event.Y > s.table.Height() {
+			return s, nil, false
+		}
+		if event.Button == tea.MouseButtonWheelUp {
+			s.scrollRows(-tableWheelStep)
+		} else {
+			s.scrollRows(tableWheelStep)
+		}
+		return s, nil, true
+	}
+	if event.Button != tea.MouseButtonLeft {
 		return s, nil, false
 	}
 	row, ok := tableRowAt(s.table, unitColumnsFor(s.lastWidth), event.X, event.Y)
@@ -439,6 +465,19 @@ func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 		s.table.MoveUp(-delta)
 	}
 	return s, nil, true
+}
+
+// scrollRows moves the selection by delta rows (positive down), clamped
+// by the table widget. An empty listing ignores the move.
+func (s *services) scrollRows(delta int) {
+	if len(s.view) == 0 {
+		return
+	}
+	if delta > 0 {
+		s.table.MoveDown(delta)
+	} else {
+		s.table.MoveUp(-delta)
+	}
 }
 
 // openDetail emits the static detail for the cursor's unit.
@@ -545,7 +584,10 @@ func (s *services) runUnit(verb UnitAction, name string) tea.Cmd {
 }
 
 // applySort switches the sort column, flipping the direction when the
-// same key repeats.
+// same key repeats. A sort is a new question about the listing, so the
+// cursor returns to the first row of the new order: sorting by name lands
+// on the first name instead of staying on a unit carried over from the
+// previous order.
 func (s *services) applySort(k unitSortKey) {
 	if s.sortKey == k {
 		s.desc = !s.desc
@@ -554,6 +596,14 @@ func (s *services) applySort(k unitSortKey) {
 		s.desc = false // attention and alphabetical both read best ascending
 	}
 	s.reapply()
+	if len(s.view) > 0 {
+		// SetCursor(0) recomputes the widget's window around the new
+		// first row and anchorTableCursor normalizes its private offset,
+		// so a cursor that sat deep in the previous order cannot leave
+		// the new first row scrolled out of view.
+		s.table.SetCursor(0)
+		anchorTableCursor(&s.table)
+	}
 }
 
 // reapply re-derives the displayed rows from the current listing,
@@ -674,16 +724,38 @@ func unitRowsFor(units []core.Service, width int) []table.Row {
 	return rows
 }
 
-// failedCount counts the failed units of the displayed view so the
-// status line can call them out.
-func failedCount(units []core.Service) int {
-	n := 0
+// emptyMessage names why the table is empty: no round listed any unit,
+// or the active filter kept none.
+func (s *services) emptyMessage() string {
+	if q := strings.TrimSpace(s.filter.Value()); q != "" {
+		return fmt.Sprintf("no services match %q", q)
+	}
+	return "no services collected"
+}
+
+// unitStateCounts tallies the displayed units by attention rank so the
+// status line can summarize the listing health in the theme's state
+// tones.
+type unitStateCounts struct {
+	failed, activating, active int
+}
+
+// countUnitStates classifies the displayed units by the same ladder the
+// active sort uses: failures, then units still changing, then the healthy
+// ones.
+func countUnitStates(units []core.Service) unitStateCounts {
+	var counts unitStateCounts
 	for _, unit := range units {
-		if strings.EqualFold(unit.Active, "failed") {
-			n++
+		switch attentionRank(unit.Active) {
+		case 0:
+			counts.failed++
+		case 1:
+			counts.activating++
+		case 2:
+			counts.active++
 		}
 	}
-	return n
+	return counts
 }
 
 // Title implements Screen.
@@ -722,7 +794,12 @@ func (s *services) View(width, height int) string {
 	muted := lipgloss.NewStyle().Foreground(s.theme.Muted)
 	danger := lipgloss.NewStyle().Foreground(s.theme.Danger)
 
-	lines := []string{s.table.View()}
+	tableView := s.table.View()
+	if s.loaded && len(s.view) == 0 && body > 1 {
+		tableView = emptyTableView(tableView, body, s.emptyMessage(), width, muted)
+	}
+
+	lines := []string{tableView}
 	if s.filtering {
 		lines = append(lines, s.filter.View())
 	}
@@ -739,8 +816,10 @@ func (s *services) View(width, height int) string {
 // statusLine composes the one-line footer: the collection error first
 // — with the muted age of the listing still on screen while it stays
 // (§5's keeps-last-good state) — the muted collecting state until the
-// first round lands, else the listing summary with the failed units
-// called out in the danger role plus the last action outcome.
+// first round lands, else the listing health summary plus the last
+// action outcome. The health counts, the active sort and an active
+// filter carry the theme's state tones so the parts needing eyes read at
+// a glance amid the muted context.
 func (s *services) statusLine(muted, danger lipgloss.Style) string {
 	if s.collectErr != nil {
 		return errStatus(s.collectErr, s.lastGood, muted, danger)
@@ -748,16 +827,27 @@ func (s *services) statusLine(muted, danger lipgloss.Style) string {
 	if !s.loaded {
 		return loadingStatus(muted)
 	}
-	parts := []string{
-		muted.Render(fmt.Sprintf("%d services · sort %s %s", len(s.view), s.sortKey, sortArrow(s.desc))),
+	sortTone := lipgloss.NewStyle().Foreground(s.theme.Secondary)
+	filterTone := lipgloss.NewStyle().Foreground(s.theme.Accent)
+	successTone := lipgloss.NewStyle().Foreground(s.theme.Success)
+	warningTone := lipgloss.NewStyle().Foreground(s.theme.Warning)
+
+	counts := countUnitStates(s.view)
+	parts := []string{muted.Render(fmt.Sprintf("%d services", len(s.view)))}
+	// Failures first: they are the reason to look at this screen. The
+	// zero buckets stay silent so a healthy listing reads short.
+	if counts.failed > 0 {
+		parts = append(parts, danger.Render(fmt.Sprintf("%d failed", counts.failed)))
 	}
-	if failed := failedCount(s.view); failed > 0 {
-		// The failed count is the one number on this line needing
-		// eyes; the muted summary around it must not defuse it.
-		parts = append(parts, danger.Render(fmt.Sprintf("%d failed", failed)))
+	if counts.activating > 0 {
+		parts = append(parts, warningTone.Render(fmt.Sprintf("%d activating", counts.activating)))
 	}
+	if counts.active > 0 {
+		parts = append(parts, successTone.Render(fmt.Sprintf("%d active", counts.active)))
+	}
+	parts = append(parts, sortTone.Render(fmt.Sprintf("sort %s %s", s.sortKey, sortArrow(s.desc))))
 	if q := strings.TrimSpace(s.filter.Value()); q != "" {
-		parts = append(parts, muted.Render(fmt.Sprintf("filter %q", q)))
+		parts = append(parts, filterTone.Render(fmt.Sprintf("filter %q", q)))
 	}
 	if s.status != "" {
 		parts = append(parts, muted.Render(s.status))

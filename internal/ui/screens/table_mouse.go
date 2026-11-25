@@ -12,6 +12,11 @@ import (
 // styles a rendered row.
 var sgrPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+// tableWheelStep is how many rows one wheel notch moves on the table
+// screens: one, the exact step the line keys take, so the wheel and the
+// keyboard never disagree.
+const tableWheelStep = 1
+
 // anchorTableCursor normalizes the table's private viewport window after
 // a programmatic cursor move. bubbles/table v1.0.0's SetCursor recomputes
 // the window start but keeps the previous YOffset, which can leave the
