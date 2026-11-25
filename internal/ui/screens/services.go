@@ -410,9 +410,12 @@ func (s *services) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return s, nil, true
 }
 
-// UpdateMouse routes presses to the open confirmation modal, else a left
-// press selects the clicked table row: the exact parity of the up/down
-// keys. Clicks outside the table fall through to the shell.
+// UpdateMouse routes presses to the open confirmation modal, then handles
+// the wheel and left clicks on the table. The wheel moves the selection by
+// tableWheelStep rows, clamped at both ends, exactly the navigation the
+// up/down keys offer; a left press selects the clicked table row. Click
+// outside the table and events over the sidebar or header fall through to
+// the shell. An open modal swallows every event.
 func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	if s.modalOpen {
 		s.modal.UpdateMouse(msg)
@@ -420,10 +423,33 @@ func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 	}
 
 	event := tea.MouseEvent(msg)
-	if event.Action != tea.MouseActionPress || event.Button != tea.MouseButtonLeft {
+	// The shell subtracts the sidebar width and the header row before
+	// delivery, so events over them carry negative coordinates.
+	if event.X < 0 || event.Y < 0 {
+		return s, nil, false
+	}
+	if event.Action != tea.MouseActionPress {
 		return s, nil, false
 	}
 	if s.lastWidth <= 0 {
+		return s, nil, false
+	}
+	switch event.Button {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		// The table owns the header plus its viewport rows; the filter
+		// and status lines below it (and the shell footer past the
+		// pane) keep their own rows, so a wheel there falls through.
+		if event.Y > s.table.Height() {
+			return s, nil, false
+		}
+		if event.Button == tea.MouseButtonWheelUp {
+			s.scrollRows(-tableWheelStep)
+		} else {
+			s.scrollRows(tableWheelStep)
+		}
+		return s, nil, true
+	}
+	if event.Button != tea.MouseButtonLeft {
 		return s, nil, false
 	}
 	row, ok := tableRowAt(s.table, unitColumnsFor(s.lastWidth), event.X, event.Y)
@@ -439,6 +465,19 @@ func (s *services) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 		s.table.MoveUp(-delta)
 	}
 	return s, nil, true
+}
+
+// scrollRows moves the selection by delta rows (positive down), clamped
+// by the table widget. An empty listing ignores the move.
+func (s *services) scrollRows(delta int) {
+	if len(s.view) == 0 {
+		return
+	}
+	if delta > 0 {
+		s.table.MoveDown(delta)
+	} else {
+		s.table.MoveUp(-delta)
+	}
 }
 
 // openDetail emits the static detail for the cursor's unit.

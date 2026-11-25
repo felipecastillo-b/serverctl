@@ -3,6 +3,7 @@ package screens
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -618,6 +619,116 @@ func TestServicesClickSelectsRow(t *testing.T) {
 	}
 	if s.table.Cursor() != cursor {
 		t.Errorf("status-line press moved the cursor to %d, want %d", s.table.Cursor(), cursor)
+	}
+}
+
+// manyUnitFixture builds a listing big enough to overflow a short table,
+// so the wheel tests exercise the viewport and not only the cursor.
+func manyUnitFixture(n int) []core.Service {
+	units := make([]core.Service, n)
+	for i := range units {
+		units[i] = core.Service{
+			Name:      fmt.Sprintf("unit-%02d.service", i),
+			Active:    "active",
+			Sub:       "running",
+			FileState: "enabled",
+		}
+	}
+	return units
+}
+
+// TestServicesWheelStepsOneRow pins the mouse-notch contract of the
+// services table: one row per notch in both directions, clamped at both
+// ends, exactly the step a line key takes.
+func TestServicesWheelStepsOneRow(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: manyUnitFixture(40)}, &fakeManager{})
+	s.View(100, 24)
+
+	cases := []struct {
+		name   string
+		button tea.MouseButton
+		want   int
+	}{
+		{"wheel down steps one row", tea.MouseButtonWheelDown, 1},
+		{"second notch steps one more", tea.MouseButtonWheelDown, 2},
+		{"wheel up steps back one", tea.MouseButtonWheelUp, 1},
+	}
+	for _, tc := range cases {
+		updated, cmd, handled := s.UpdateMouse(mousePress(tc.button, 2, 2))
+		s = updated.(*services)
+		if !handled || cmd != nil {
+			t.Fatalf("%s: handled=%v cmd=%v, want claimed without a command", tc.name, handled, cmd)
+		}
+		if s.table.Cursor() != tc.want {
+			t.Errorf("%s: cursor = %d, want %d", tc.name, s.table.Cursor(), tc.want)
+		}
+	}
+
+	// Both ends clamp instead of wrapping or overflowing.
+	s.table.SetCursor(len(s.view) - 1)
+	updated, _, _ := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	s = updated.(*services)
+	if got, want := s.table.Cursor(), len(s.view)-1; got != want {
+		t.Errorf("wheel down at the end: cursor = %d, want %d", got, want)
+	}
+	s.table.SetCursor(0)
+	updated, _, _ = s.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+	s = updated.(*services)
+	if s.table.Cursor() != 0 {
+		t.Errorf("wheel up at the start: cursor = %d, want 0", s.table.Cursor())
+	}
+
+	// Over the sidebar the shell owns the event: local X is negative.
+	if _, _, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, -1, 2)); handled {
+		t.Error("wheel over the sidebar must fall through to the shell")
+	}
+	// The status line below the table and the shell footer past the
+	// pane keep their own rows.
+	for _, y := range []int{23, 24} {
+		if _, _, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, y)); handled {
+			t.Errorf("wheel over row %d (outside the table) must fall through", y)
+		}
+	}
+
+	// An open confirmation modal is exclusive and swallows the wheel.
+	if _, _, handled := s.UpdateKey(keyMsg("x")); !handled || !s.modalOpen {
+		t.Fatal("x must open the STOP confirmation")
+	}
+	s.View(100, 24)
+	cursor := s.table.Cursor()
+	updated, cmd, handled := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+	s = updated.(*services)
+	if !handled || !s.modalOpen || cmd != nil || s.table.Cursor() != cursor {
+		t.Errorf("modal must swallow the wheel: handled=%v open=%v cmd=%v cursor=%d want %d",
+			handled, s.modalOpen, cmd, s.table.Cursor(), cursor)
+	}
+}
+
+// TestServicesWheelKeepsSelectionVisible pins the viewport half of the
+// wheel contract: after every notch, down to the end of the listing and
+// back to the first row, the selected unit is still rendered inside the
+// visible table.
+func TestServicesWheelKeepsSelectionVisible(t *testing.T) {
+	s := newServicesScreen(t, &fakeLister{units: manyUnitFixture(40)}, &fakeManager{})
+	s.View(100, 14)
+
+	checkVisible := func(dir string, step int) {
+		out := s.View(100, 14)
+		name := s.view[s.table.Cursor()].Name
+		if !strings.Contains(out, name) {
+			t.Fatalf("%s step %d: cursor on %s (row %d) is not visible:\n%s",
+				dir, step, name, s.table.Cursor(), out)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		updated, _, _ := s.UpdateMouse(mousePress(tea.MouseButtonWheelDown, 2, 2))
+		s = updated.(*services)
+		checkVisible("down", i)
+	}
+	for i := 0; i < 20; i++ {
+		updated, _, _ := s.UpdateMouse(mousePress(tea.MouseButtonWheelUp, 2, 2))
+		s = updated.(*services)
+		checkVisible("up", i)
 	}
 }
 

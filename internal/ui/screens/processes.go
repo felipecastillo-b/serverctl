@@ -362,13 +362,9 @@ func (p *processes) UpdateKey(msg tea.KeyMsg) (Screen, tea.Cmd, bool) {
 	return p, nil, true
 }
 
-// processWheelStep is how many rows one wheel notch moves: one, the same
-// step the arrow keys use, so the wheel walks the list process by process.
-const processWheelStep = 1
-
 // UpdateMouse routes presses to the open confirmation modal, then handles
 // the wheel and left clicks on the table. The wheel moves the selection by
-// processWheelStep rows, clamped at both ends, exactly the navigation the
+// tableWheelStep rows, clamped at both ends, exactly the navigation the
 // arrow keys offer; a left press selects the clicked row. Clicks outside
 // the table and events over the sidebar or header fall through to the
 // shell. An open modal swallows every event.
@@ -399,9 +395,9 @@ func (p *processes) UpdateMouse(msg tea.MouseMsg) (Screen, tea.Cmd, bool) {
 			return p, nil, false
 		}
 		if event.Button == tea.MouseButtonWheelUp {
-			p.scrollRows(-processWheelStep)
+			p.scrollRows(-tableWheelStep)
 		} else {
-			p.scrollRows(processWheelStep)
+			p.scrollRows(tableWheelStep)
 		}
 		return p, nil, true
 	}
